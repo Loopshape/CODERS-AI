@@ -1,5 +1,5 @@
 # -----------------------
-# AI Subcommand: Generate Dynamic README
+# AI Subcommand: Generate Dynamic README branched
 # -----------------------
 ai_readme_dynamic() {
     local readme_file="README.md"
