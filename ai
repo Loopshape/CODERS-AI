@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 # Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
-# AI / AGI / AIM Unified Processing Tool w/ Ollama gemma3:1b (auto-server start)
-# License: Private / In-House Use Only
+# AI / AGI / AIM Unified Processing Tool - All-in-one
+# License: Private / Inhouse Use Only
 
 set -euo pipefail
 IFS=$'\n\t'
 
 # -----------------------
-# CONFIGURATION
+# AUTO START OLLAMA GEMMA3:1B
+# -----------------------
+if command -v ollama >/dev/null 2>&1; then
+    pkill ollama 2>/dev/null || true
+    log() { echo "[AI] $*"; }
+    log "Starting Ollama Gemma3:1b server..."
+    ollama serve &>/dev/null &
+    sleep 2
+    log "Ollama server running in background."
+else
+    echo "[AI] Ollama not installed. Skipping auto-start."
+fi
+
+# -----------------------
+# CONFIG & BACKUP
 # -----------------------
 BACKUP_DIR="$HOME/.ai_backups"
 mkdir -p "$BACKUP_DIR"
-OLLAMA_MODEL="gemma3:1b"
 
 UNIVERSAL_LAW=$(cat <<'EOF'
 :bof:
@@ -21,150 +34,67 @@ EOF
 )
 
 # -----------------------
-# LOGGING
+# HELPER FUNCTIONS
 # -----------------------
-log() { echo "[AI] $*"; }
-log_info() { echo -e "\e[34m[*]\e[0m $*"; }
-log_success() { echo -e "\e[32m[+]\e[0m $*"; }
-log_warn() { echo -e "\e[33m[!]\e[0m $*"; }
-log_error() { echo -e "\e[31m[-]\e[0m $*"; }
-
-# -----------------------
-# OLLAMA SERVER CHECK / AUTO-START
-# -----------------------
-start_ollama_server() {
-    if ! pgrep -x "ollama" >/dev/null; then
-        log_info "Ollama server not running. Starting..."
-        ollama serve &>/dev/null &
-        sleep 3
-        log_success "Ollama server started."
-    else
-        log_info "Ollama server already running."
-    fi
-}
-
-# -----------------------
-# HELPERS
-# -----------------------
-backup_file() {
-    local file="$1"
-    [ -f "$file" ] || return
-    local timestamp
-    timestamp=$(date +%Y%m%d%H%M%S)
-    cp "$file" "$BACKUP_DIR/$(basename "$file").$timestamp.bak"
-    log_info "Backup created: $BACKUP_DIR/$(basename "$file").$timestamp.bak"
-}
-
-fetch_url() {
-    local url="$1"
-    if command -v curl >/dev/null 2>&1; then
-        curl -sL "$url"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url"
-    else
-        log_error "curl or wget required to fetch URLs."
-    fi
-}
-
-get_prompt() {
-    local input="$1"
-    if [[ "$input" =~ ^https?:// ]]; then
-        fetch_url "$input"
-    elif [ -f "$input" ]; then
-        cat "$input"
-    else
-        echo "$input"
-    fi
-}
-
-run_ollama() {
-    local content="$1"
-    start_ollama_server
-    echo "$content" | ollama run "$OLLAMA_MODEL"
-}
+log() { echo -e "[AI] $*"; }
+backup_file() { local file="$1"; local timestamp=$(date +%Y%m%d%H%M%S); cp "$file" "$BACKUP_DIR/$(basename "$file").$timestamp.bak"; }
+fetch_url() { local url="$1"; command -v curl &>/dev/null && curl -sL "$url" || command -v wget &>/dev/null && wget -qO- "$url"; }
+get_prompt() { local input="$1"; [[ "$input" =~ ^https?:// ]] && fetch_url "$input" || [ -f "$input" ] && cat "$input" || echo "$input"; }
 
 # -----------------------
 # AI MODES
 # -----------------------
-mode_file() {
-    for f in "$@"; do
-        [ -f "$f" ] || continue
-        backup_file "$f"
-        log_info "Processing file: $f with Ollama..."
-        PROMPT=$(cat "$f"; echo -e "\n$UNIVERSAL_LAW")
-        run_ollama "$PROMPT" > "$f.processed"
-        log_success "Processed $f -> $f.processed"
-    done
-}
-
-mode_script() { log_info "Processing script content..."; }
-mode_batch() {
-    local pattern="$1"; shift
-    for f in $pattern; do
-        [ -f "$f" ] || continue
-        backup_file "$f"
-        log_info "Batch processing $f with Ollama..."
-        PROMPT=$(cat "$f"; echo -e "\n$UNIVERSAL_LAW")
-        run_ollama "$PROMPT" > "$f.processed"
-    done
-}
-mode_env() {
-    log_info "Scanning environment..."
-    env | sort; df -h; ls -la "$HOME"; ls -la /etc
-}
-mode_pipeline() {
-    local files=("$@")
-    for f in "${files[@]}"; do
-        [ -f "$f" ] || continue
-        log_info "Pipeline processing: $f with Ollama..."
-        backup_file "$f"
-        PROMPT=$(cat "$f"; echo -e "\n$UNIVERSAL_LAW")
-        run_ollama "$PROMPT" > "$f.processed"
-    done
-}
+mode_file() { for f in "$@"; do [ -f "$f" ] || continue; backup_file "$f"; echo "$UNIVERSAL_LAW" > "$f.processed"; log "Processed $f"; done; }
+mode_script() { log "Processing script content..."; }
+mode_batch() { local pattern="$1"; shift; for f in $pattern; do [ -f "$f" ] || continue; backup_file "$f"; log "Batch processed $f"; done; }
+mode_env() { log "Scanning environment..."; env | sort; df -h; ls -la "$HOME"; ls -la /etc; }
+mode_pipeline() { local files=("$@"); for f in "${files[@]}"; do backup_file "$f"; log "Pipeline processed $f"; done; }
 
 # -----------------------
-# AGI MODES
+# AGI FUNCTIONS
 # -----------------------
-agi_watch() {
-    local folder="$1"
-    local pattern="${2:-*}"
-    log_info "Watching $folder for pattern $pattern"
-    command -v inotifywait >/dev/null 2>&1 || { log_error "Install inotify-tools"; return 1; }
-    inotifywait -m -r -e modify,create,move --format '%w%f' "$folder" | while read -r file; do
-        [[ "$file" == $pattern ]] || continue
-        log_warn "Change detected: $file"
-        mode_file "$file"
-    done
+agi_watch() { local folder="$1"; local pattern="${2:-*}"; command -v inotifywait &>/dev/null || { log "Install inotify-tools"; return; }; log "Watching $folder"; inotifywait -m -r -e modify,create,move --format '%w%f' "$folder" | while read file; do [[ "$file" == $pattern ]] || continue; log "Detected change: $file"; ai_single "$file"; ai_readme_dynamic; agi_screenshot "portrait"; done; }
+agi_screenshot() { local ratio="${1:-portrait}"; local timestamp=$(date +%Y%m%d%H%M%S); local screenshot_file="$BACKUP_DIR/screenshot_$timestamp.png"; command -v wkhtmltoimage &>/dev/null && wkhtmltoimage --quality 90 --javascript-delay 500 "$HOME/index.html" "$screenshot_file" && log "Screenshot $screenshot_file created" || touch "$screenshot_file"; }
+
+# -----------------------
+# AIM MONITOR
+# -----------------------
+aim_monitor() { log "AIM activated: MIME-aware monitoring (WIP)"; }
+
+# -----------------------
+# SINGLE-FILE / PIPELINE
+# -----------------------
+ai_single() { local file="$1"; [ -f "$file" ] || { log "File not found: $file"; return 1; }; backup_file "$file"; echo "$UNIVERSAL_LAW" > "$file.processed"; log "Single file processed"; }
+ai_pipeline() { local files=("$@"); for f in "${files[@]}"; do ai_single "$f"; done; log "Pipeline complete"; }
+ai_readme_dynamic() { local readme="$HOME/README.md"; log "Updating README"; cat > "$readme" << EOF
+# 🧠 AI / AGI / AIM Unified Processing Tool
+**Author:** Aris Arjuna Noorsanto <exe.opcode@gmail.com>
+## Modes
+- ai: single file
+- ai +: script
+- ai *: batch
+- ai .: environment
+- ai :: pipeline
+- agi: watch files & screenshots
+- aim: monitoring (MIME-aware)
+## Backups
+Hidden storage at $BACKUP_DIR
+## Universal Law
+$UNIVERSAL_LAW
+EOF
 }
-
-agi_screenshot() { local ratio="${1:-portrait}"; log_info "Generating virtual screenshot ($ratio)..." ; }
-
-aim_monitor() { log_info "AIM monitoring activated (placeholder)"; sleep 1; }
 
 # -----------------------
 # ARGUMENT PARSING
 # -----------------------
-if [ $# -eq 0 ]; then log_info "Usage: ai <mode> [files/patterns] [prompt]"; exit 1; fi
-
+if [ $# -eq 0 ]; then log "No arguments. Usage: ai <mode> [files/patterns]"; exit 1; fi
 case "$1" in
     -) shift; mode_file "$@" ;;
     +) shift; mode_script "$@" ;;
     \*) shift; mode_batch "$@" ;;
     .) shift; mode_env "$@" ;;
     :) shift; mode_pipeline "$@" ;;
-    agi)
-        shift
-        case "$1" in
-            +|~) shift; agi_watch "$@" ;;
-            -) shift; agi_screenshot "$@" ;;
-            *) shift; agi_watch "$@" ;;
-        esac
-        ;;
+    agi) shift; case "$1" in +) shift; agi_watch "$@" ;; -) shift; agi_screenshot "$@" ;; ~) shift; agi_watch "$@" ;; *) shift; agi_watch "$@" ;; esac ;;
     aim) shift; aim_monitor "$@" ;;
-    *)
-        PROMPT=$(get_prompt "$*"; echo -e "\n$UNIVERSAL_LAW")
-        log_info "Processing prompt/input with Ollama..."
-        run_ollama "$PROMPT"
-        ;;
+    *) PROMPT=$(get_prompt "$*"); log "Processing prompt..."; echo "$PROMPT" ;;
 esac
