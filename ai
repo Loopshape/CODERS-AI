@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
-# AI / AGI / AIM Unified Processing Tool - Full WebScraper Extension
+# AI / AGI / AIM Unified Processing Tool - Multi-URL + File Pipeline
 set -euo pipefail
 IFS=$'\n\t'
 
+# -----------------------
+# CONFIG & UNIVERSAL LAW
+# -----------------------
 BACKUP_DIR="$HOME/.ai_backups"
 mkdir -p "$BACKUP_DIR"
 
@@ -14,7 +17,10 @@ redo complete layout and design an advanced symetrics to proximity accordance fo
 EOF
 )
 
-log() { echo -e "[AI] $*"; }
+# -----------------------
+# LOGGING / HELPERS
+# -----------------------
+log() { echo "[AI] $*"; }
 
 backup_file() {
     local file="$1"
@@ -34,41 +40,19 @@ fetch_url() {
     fi
 }
 
-# -----------------------
-# WEB SCRAPER LOGIC
-# -----------------------
-scrape_url() {
-    local url="$1"
-    local folder="$2"
-    mkdir -p "$folder"
-
-    log "Fetching robots.txt for $url..."
-    local robots
-    robots=$(fetch_url "$url/robots.txt" || echo "")
-    log "Robots.txt content (if any):"
-    echo "$robots"
-
-    log "Scraping $url root folder..."
-    # Save index.html and linked content (mock)
-    local html
-    html=$(fetch_url "$url")
-    echo "$html" > "$folder/index.html"
-    log "Saved index.html to $folder"
-
-    # Extract links (simple regex)
-    local links
-    links=$(echo "$html" | grep -Eo '<a [^>]+>' | grep -Eo 'href="[^"]+"' | cut -d'"' -f2)
-    for l in $links; do
-        # Ignore external URLs
-        if [[ "$l" =~ ^https?:// ]]; then continue; fi
-        local link_path="$folder/$(basename "$l")"
-        fetch_url "$url/$l" > "$link_path"
-        log "Saved linked resource: $link_path"
-    done
+get_prompt() {
+    local input="$1"
+    if [[ "$input" =~ ^https?:// ]]; then
+        fetch_url "$input"
+    elif [ -f "$input" ]; then
+        cat "$input"
+    else
+        echo "$input"
+    fi
 }
 
 # -----------------------
-# AI MODES
+# AI / FILE MODES
 # -----------------------
 mode_file() {
     for f in "$@"; do
@@ -79,13 +63,41 @@ mode_file() {
     done
 }
 
-mode_script() { log "Processing script content..."; }
-mode_batch() { log "Batch processing..."; }
-mode_env() { env | sort; df -h; ls -la "$HOME"; ls -la /etc; }
-mode_pipeline() { log "Pipeline processing..."; }
+# -----------------------
+# MULTI-URL / PIPELINE
+# -----------------------
+multi_url_pipeline() {
+    local targets=("$@")
+    local base_dir="$BACKUP_DIR/multi_scrape"
+    mkdir -p "$base_dir"
+
+    for t in "${targets[@]}"; do
+        if [[ "$t" =~ ^https?:// ]]; then
+            # Treat as URL
+            local folder_name
+            folder_name=$(echo "$t" | sed 's|https\?://||; s|/|_|g')
+            local folder="$base_dir/$folder_name"
+            mkdir -p "$folder"
+
+            log "[AI] Scraping $t -> $folder"
+            fetch_url "$t" > "$folder/index.html"
+
+            # Apply Universal Law
+            echo "$UNIVERSAL_LAW" > "$folder/index.html.processed"
+
+            # Optional screenshot placeholder
+            log "[AI] Generating screenshot for $folder (mock)"
+
+        elif [ -f "$t" ]; then
+            mode_file "$t"
+        else
+            log "[AI] Unknown target: $t"
+        fi
+    done
+}
 
 # -----------------------
-# AGI MODE
+# AGI WATCH / SCREENSHOT
 # -----------------------
 agi_watch() {
     local folder="$1"
@@ -94,78 +106,42 @@ agi_watch() {
     log "Watching $folder for changes..."
     inotifywait -m -r -e modify --format '%w%f' "$folder" | while read file; do
         [[ "$file" == $pattern ]] || continue
-        log "Detected change: $file"
+        log "Detected change in $file"
         mode_file "$file"
-        agi_screenshot "$file" "portrait"
     done
 }
 
 agi_screenshot() {
-    local target="${1:-$PWD}"
-    local ratio="${2:-portrait}"
-    local output_dir="$BACKUP_DIR/screenshots"
-    mkdir -p "$output_dir"
-    log "Generating screenshot ($ratio) for $target..."
-
-    node - <<'EOF'
-const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
-const target = process.argv[2];
-const ratio = process.argv[3];
-const output_dir = process.argv[4];
-(async () => {
-  const browser = await puppeteer.launch({ headless: true });
-  const page = await browser.newPage();
-  let viewport = { width: 1200, height: 1600 };
-  if (ratio==='landscape') viewport={width:1600,height:1200};
-  if (ratio==='square') viewport={width:1200,height:1200};
-  await page.setViewport(viewport);
-  const files = fs.statSync(target).isDirectory()?fs.readdirSync(target).map(f=>path.join(target,f)):[target];
-  for(const file of files){
-    let url='file://'+path.resolve(file);
-    if(/^https?:\/\//.test(file)) url=file;
-    const name=path.basename(file,path.extname(file));
-    const out_path=path.join(output_dir,name+'.png');
-    try{await page.goto(url,{waitUntil:'networkidle2'}); await page.screenshot({path:out_path,fullPage:true}); console.log('[AI] Screenshot saved:',out_path);}catch(e){console.error('[AI] Failed:',file,e.message);}
-  }
-  await browser.close();
-})();
-EOF
+    local ratio="${1:-portrait}"
+    log "Generating virtual screenshot ($ratio)..."
+    # Placeholder for headless screenshot logic
 }
 
 # -----------------------
-# AIM MODE
-# -----------------------
-aim_monitor() { log "AIM MIME-aware monitoring (placeholder)"; sleep 1; }
-
-# -----------------------
-# ARGUMENT PARSING
+# ARGUMENT PARSER
 # -----------------------
 if [ $# -eq 0 ]; then
-    log "Usage: ai <mode> [files/patterns] [prompt/url]"
+    log "Usage: ai <mode> [targets/patterns]"
     exit 1
 fi
 
 case "$1" in
     -) shift; mode_file "$@" ;;
-    +) shift; mode_script "$@" ;;
-    \*) shift; mode_batch "$@" ;;
-    .) shift; mode_env "$@" ;;
-    :) shift; mode_pipeline "$@" ;;
-    agi) shift
+    +) shift; log "[AI] Script mode not implemented yet" ;;
+    \*) shift; log "[AI] Regex batch not implemented yet" ;;
+    .) shift; log "[AI] Environment scan not implemented yet" ;;
+    :) shift
+        # Pipeline / multi-target mode
+        IFS=':' read -ra items <<< "$1"
+        multi_url_pipeline "${items[@]}"
+        ;;
+    agi)
+        shift
         case "$1" in
-            +) shift; agi_watch "$@" ;;
+            +|~) shift; agi_watch "$@" ;;
             -) shift; agi_screenshot "$@" ;;
-            ~) shift; agi_watch "$@" ;;
             *) shift; agi_watch "$@" ;;
         esac
-        ;;
-    aim) shift; aim_monitor "$@" ;;
-    scrape) shift
-        local url="${1:?Specify URL}"
-        local folder="${2:-$BACKUP_DIR/scraped}"
-        scrape_url "$url" "$folder"
         ;;
     *)
         PROMPT=$(get_prompt "$*")
