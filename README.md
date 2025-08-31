@@ -1,20 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 🧠 AI / AGI / AIM Unified Processing Tool
 
-# Run and deploy your AI Studio app
+**Autor:** Aris Arjuna Noorsanto `<exe.opcode@gmail.com>`  
+**Lizenz:** Privat / Inhouse Use Only  
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/drive/1QsEgaP0E_OrU92uKObbEMM3NvSHuYGH0
+## 📜 Agenda & Regeln
 
-## Run Locally
+Dieses Projekt basiert auf einem **einzigen Skript** (`~/bin/ai`).  
+Alle Funktionen werden direkt in dieser Datei gepflegt.  
+Es werden **keine weiteren Dateien** angelegt oder benötigt.  
 
-**Prerequisites:**  Node.js
+### 1. Grundidee
+- `ai` → Standardmodus, Einzeldatei-Analyse und Optimierung.  
+- `agi` → Multifile-Input, zusammengeführt in **Singlefile-Output**.  
+- `aim` → Monitoring & MIME-bewusstes Verhalten.  
 
+### 2. Universalgesetz
+Im Skript ist ein String `UNIVERSAL_LAW` eingebettet (`:BOF:` … `:EOF:`).  
+Dieses bestimmt:
+- Symmetrien & Layout (goldener Schnitt, Proximität).  
+- Subliminale Führung für Wiederholung und Kontexte.  
+- Robuste & attraktive Strukturen.  
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 3. Features
+- **JS/DOM-Optimierung** für HTML-Dateien.  
+- **CSS-Theme-Injektion** mit Neon-Design.  
+- **Barrierefreiheit** durch ARIA-Rollen.  
+- **Eventlistener-Monitoring** (mit AI-Kommentaren).  
+- **Webscraping** (inkl. robots.txt, Rootfolder, Screenshot).  
+- **Monitoring** von Dateien/Verzeichnissen (`inotifywait`).  
+
+### 4. Workflow
+Beim Start wird sichergestellt, dass `ollama` läuft:
+```bash
+pkill ollama
+ollama serve &
