@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
-# AI / AGI / AIM Unified Processing Tool w/ Ollama gemma3:1b
+# AI / AGI / AIM Unified Processing Tool w/ Ollama gemma3:1b (auto-server start)
 # License: Private / In-House Use Only
 
 set -euo pipefail
@@ -11,7 +11,6 @@ IFS=$'\n\t'
 # -----------------------
 BACKUP_DIR="$HOME/.ai_backups"
 mkdir -p "$BACKUP_DIR"
-
 OLLAMA_MODEL="gemma3:1b"
 
 UNIVERSAL_LAW=$(cat <<'EOF'
@@ -29,6 +28,20 @@ log_info() { echo -e "\e[34m[*]\e[0m $*"; }
 log_success() { echo -e "\e[32m[+]\e[0m $*"; }
 log_warn() { echo -e "\e[33m[!]\e[0m $*"; }
 log_error() { echo -e "\e[31m[-]\e[0m $*"; }
+
+# -----------------------
+# OLLAMA SERVER CHECK / AUTO-START
+# -----------------------
+start_ollama_server() {
+    if ! pgrep -x "ollama" >/dev/null; then
+        log_info "Ollama server not running. Starting..."
+        ollama serve &>/dev/null &
+        sleep 3
+        log_success "Ollama server started."
+    else
+        log_info "Ollama server already running."
+    fi
+}
 
 # -----------------------
 # HELPERS
@@ -64,15 +77,9 @@ get_prompt() {
     fi
 }
 
-# -----------------------
-# OLLAMA INTEGRATION
-# -----------------------
 run_ollama() {
     local content="$1"
-    if ! command -v ollama >/dev/null 2>&1; then
-        log_error "Ollama CLI not found. Install Ollama and ensure 'ollama' command is in PATH."
-        return 1
-    fi
+    start_ollama_server
     echo "$content" | ollama run "$OLLAMA_MODEL"
 }
 
@@ -90,14 +97,9 @@ mode_file() {
     done
 }
 
-mode_script() {
-    log_info "Processing script content..."
-    # Placeholder: extend script logic here
-}
-
+mode_script() { log_info "Processing script content..."; }
 mode_batch() {
-    local pattern="$1"
-    shift
+    local pattern="$1"; shift
     for f in $pattern; do
         [ -f "$f" ] || continue
         backup_file "$f"
@@ -106,15 +108,10 @@ mode_batch() {
         run_ollama "$PROMPT" > "$f.processed"
     done
 }
-
 mode_env() {
     log_info "Scanning environment..."
-    env | sort
-    df -h
-    ls -la "$HOME"
-    ls -la /etc
+    env | sort; df -h; ls -la "$HOME"; ls -la /etc
 }
-
 mode_pipeline() {
     local files=("$@")
     for f in "${files[@]}"; do
@@ -141,27 +138,14 @@ agi_watch() {
     done
 }
 
-agi_screenshot() {
-    local ratio="${1:-portrait}"
-    log_info "Generating virtual screenshot ($ratio)..."
-    # Placeholder: implement headless screenshot logic
-}
+agi_screenshot() { local ratio="${1:-portrait}"; log_info "Generating virtual screenshot ($ratio)..." ; }
 
-# -----------------------
-# AIM MONITOR
-# -----------------------
-aim_monitor() {
-    log_info "AIM monitoring activated (placeholder)"
-    sleep 1
-}
+aim_monitor() { log_info "AIM monitoring activated (placeholder)"; sleep 1; }
 
 # -----------------------
 # ARGUMENT PARSING
 # -----------------------
-if [ $# -eq 0 ]; then
-    log_info "Usage: ai <mode> [files/patterns] [prompt]"
-    exit 1
-fi
+if [ $# -eq 0 ]; then log_info "Usage: ai <mode> [files/patterns] [prompt]"; exit 1; fi
 
 case "$1" in
     -) shift; mode_file "$@" ;;
