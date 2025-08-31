@@ -1,3 +1,9 @@
+#!/usr/bin/env bash
+# Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
+# AI / AGI / AIM Unified Processing Tool - README generator
+
+generate_readme() {
+cat > README.md <<'EOF'
 # 🧠 AI / AGI / AIM Unified Processing Tool
 
 **Author:** Aris Arjuna Noorsanto `<exe.opcode@gmail.com>`  
