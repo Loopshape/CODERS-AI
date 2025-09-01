@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 # Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
-# AI / AGI / AIM Unified Processing Tool with Ollama Integration
-# Modes: ai - file, ai + script, ai * regex batch, ai . env, ai : pipeline
-# AGI: watch files, batch, screenshots, web scraping
-# AIM: monitoring
-# Ollama: automatic model serving & prompt processing
-set -euo pipefail
+# AI / AGI / AIM Unified Processing Tool
+# Termux/Proot-Distro compatible with Ollama gemma3:1b
+
+set -eu
 IFS=$'\n\t'
 
 # -----------------------
 # CONFIG
 # -----------------------
-BACKUP_DIR="$HOME/.ai_backups"
+HOME_ROOT="${HOME:-/data/data/com.termux/files/home}"
+BACKUP_DIR="$HOME_ROOT/.ai_backups"
 mkdir -p "$BACKUP_DIR"
-
-OLLAMA_MODEL="gemma3:1b"
 
 UNIVERSAL_LAW=$(cat <<'EOF'
 :bof:
@@ -24,15 +21,20 @@ EOF
 )
 
 # -----------------------
-# HELPER FUNCTIONS
+# HELPER LOGGING
 # -----------------------
-log() { echo "[AI] $*"; }
+log_info()    { printf '\033[34m[*] %s\033[0m\n' "$*"; }
+log_success() { printf '\033[32m[+] %s\033[0m\n' "$*"; }
+log_warn()    { printf '\033[33m[!] %s\033[0m\n' "$*"; }
+log_error()   { printf '\033[31m[-] %s\033[0m\n' "$*"; }
 
 backup_file() {
     local file="$1"
-    local timestamp
-    timestamp=$(date +%Y%m%d%H%M%S)
-    cp "$file" "$BACKUP_DIR/$(basename "$file").$timestamp.bak"
+    [ -f "$file" ] || return
+    local ts
+    ts=$(date +%Y%m%d%H%M%S)
+    cp "$file" "$BACKUP_DIR/$(basename "$file").$ts.bak"
+    log_info "Backup created for $file -> $BACKUP_DIR"
 }
 
 fetch_url() {
@@ -42,152 +44,123 @@ fetch_url() {
     elif command -v wget >/dev/null 2>&1; then
         wget -qO- "$url"
     else
-        log "Error: curl or wget required to fetch URLs."
+        log_error "curl or wget required to fetch URLs"
     fi
 }
 
 get_prompt() {
     local input="$1"
-    if [[ "$input" =~ ^https?:// ]]; then
-        fetch_url "$input"
-    elif [ -f "$input" ]; then
-        cat "$input"
-    else
-        echo "$input"
+    case "$input" in
+        http://*|https://*) fetch_url "$input" ;;
+        *) [ -f "$input" ] && cat "$input" || echo "$input" ;;
+    esac
+}
+
+# -----------------------
+# HTML/JS/DOM ENHANCEMENT
+# -----------------------
+html_enhance() {
+    local file="$1"
+    [ -f "$file" ] || { log_warn "HTML file not found: $file"; return; }
+    backup_file "$file"
+    log_info "Enhancing HTML/JS/DOM for $file..."
+
+    local content
+    content=$(<"$file")
+
+    # Inject simple neon theme if <head> exists
+    if [[ "$content" == *"<head>"* && "$content" != *"--main-bg"* ]]; then
+        content=$(echo "$content" | sed -E "s|<head>|<head><style>:root{--main-bg:#8B0000;--main-fg:#fff;--btn-color:#ff00ff;--link-color:#ffff00;}</style>|")
     fi
+
+    # Add AI comment to JS functions (simple regex)
+    if command -v perl >/dev/null 2>&1; then
+        content=$(echo "$content" | perl -0777 -pe 's|function\s+([a-zA-Z0-9_]+)\s*\((.*?)\)\s*\{(?!\s*\/\*\s*AI:)|function \1(\2) { /* AI: optimize this function */ |g')
+    fi
+
+    # Event listener monitoring
+    content=$(echo "$content" | sed -E "s|\.addEventListener\((['\"])(.*?)\1,(.*)\)|.addEventListener(\1\2\1, /* AI: monitored */\3)|g")
+
+    # Replace div.section with semantic <section>
+    content=$(echo "$content" | sed -E 's|<div class="section"|<section class="section"|g; s|</div><!-- .section -->|</section>|g')
+
+    # Accessibility roles
+    content=$(echo "$content" | sed -E 's|<nav|<nav role="navigation"|g; s|<header|<header role="banner"|g; s|<main|<main role="main"|g; s|<footer|<footer role="contentinfo"|g')
+
+    echo "$content" > "$file.processed"
+    log_success "Enhanced HTML saved as $file.processed"
 }
 
 # -----------------------
-# OLLAMA INTEGRATION
+# OLLAMA GEMMA3:1B PROMPT
 # -----------------------
-ollama_init() {
-    log "Stopping any running Ollama server..."
-    pkill ollama || true
-    log "Starting Ollama server in background..."
-    ollama serve &>/dev/null &
-    sleep 2
-    log "Ollama server ready."
-}
-
-ollama_prompt() {
+ollama_run() {
     local prompt="$1"
-    if ! command -v ollama &>/dev/null; then
-        log "Ollama not installed. Install via Homebrew."
-        return 1
-    fi
-    ollama_init
-    log "Sending prompt to Ollama model: $OLLAMA_MODEL"
-    ollama run "$OLLAMA_MODEL" --prompt "$prompt"
+    log_info "Running prompt on gemma3:1b..."
+    pkill -f 'ollama serve' 2>/dev/null || true
+    ollama serve &
+    sleep 2
+    echo "$prompt" | ollama run gemma3:1b
 }
 
 # -----------------------
 # AI MODES
 # -----------------------
-mode_file() {
-    for f in "$@"; do
-        [ -f "$f" ] || continue
-        backup_file "$f"
-        log "Processing file: $f"
-        echo "$UNIVERSAL_LAW" > "$f.processed"
-        ollama_prompt "$UNIVERSAL_LAW" > "$f.ollama"
-    done
-}
-
-mode_script() {
-    log "Processing script content..."
-}
-
-mode_batch() {
-    local pattern="$1"
-    shift
-    for f in $pattern; do
-        [ -f "$f" ] || continue
-        backup_file "$f"
-        log "Batch processing $f"
-    done
-}
-
-mode_env() {
-    log "Scanning environment..."
-    env | sort
-    df -h
-    ls -la "$HOME"
-    ls -la /etc
-}
-
-mode_pipeline() {
-    local files=("$@")
-    for f in "${files[@]}"; do
-        log "Pipeline processing: $f"
-        backup_file "$f"
-    done
-}
+mode_file() { for f in "$@"; do html_enhance "$f"; done; }
+mode_script() { log_info "Processing script content..."; }
+mode_batch() { local pattern="$1"; shift; for f in $pattern; do html_enhance "$f"; done; }
+mode_env() { log_info "Scanning environment..."; env | sort; df -h; ls -la "$HOME_ROOT"; ls -la /etc; }
+mode_pipeline() { for f in "$@"; do html_enhance "$f"; done; }
 
 # -----------------------
 # AGI MODES
 # -----------------------
-agi_watch() {
-    local folder="$1"
-    local pattern="${2:-*}"
-    log "Watching $folder for pattern $pattern"
-    command -v inotifywait >/dev/null 2>&1 || { log "Install inotify-tools"; return; }
-    inotifywait -m -r -e modify --format '%w%f' "$folder" | while read file; do
-        [[ "$file" == $pattern ]] || continue
-        log "Detected change in $file, refreshing..."
-        mode_file "$file"
-    done
-}
+agi_watch() { local folder="$1"; local pattern="${2:-*}"; log_info "Watching $folder for changes matching $pattern"; command -v inotifywait >/dev/null 2>&1 || { log_error "Install inotify-tools"; return; }; inotifywait -m -r -e modify,create,move --format '%w%f' "$folder" | while read file; do case "$file" in $pattern) log_info "Detected change: $file"; html_enhance "$file"; esac; done; }
+agi_screenshot() { log_info "Screenshot disabled in Termux/Proot"; }
 
-agi_screenshot() {
-    local ratio="${1:-portrait}"
-    log "Generating virtual screenshot ($ratio)..."
-}
-
-agi_webscrape() {
-    local url="$1"
-    local folder="${2:-$BACKUP_DIR/webscrape}"
-    mkdir -p "$folder"
-    local html_file="$folder/$(basename "$url").html"
-    fetch_url "$url" > "$html_file"
-    log "Fetched $url -> $html_file"
+# -----------------------
+# .bashrc ADAPTATION
+# -----------------------
+adapt_bashrc() {
+    local bashrc="$HOME_ROOT/.bashrc"
+    backup_file "$bashrc"
+    log_info "Rewriting .bashrc with AI/AGI/AIM configuration..."
+    cat > "$bashrc" <<'EOF'
+# Auto-generated .bashrc by ~/bin/ai
+export PATH="$HOME/bin:$PATH"
+alias ai='~/bin/ai'
+EOF
+    log_success ".bashrc rewritten successfully."
+    . "$bashrc"
 }
 
 # -----------------------
-# AIM MODE
+# INSTALLER MODE
 # -----------------------
-aim_monitor() {
-    log "AIM activated: MIME-aware monitoring (Placeholder)"
-    sleep 1
+mode_init() {
+    log_info "Installing AI/AGI/AIM tool..."
+    mkdir -p "$HOME_ROOT/bin"
+    cp -f "$0" "$HOME_ROOT/bin/ai"
+    chmod +x "$HOME_ROOT/bin/ai"
+    log_success "Script installed at $HOME_ROOT/bin/ai"
+    adapt_bashrc
 }
 
 # -----------------------
-# ARGUMENT PARSING
+# MAIN ARGUMENT PARSING
 # -----------------------
 if [ $# -eq 0 ]; then
-    log "No arguments provided. Usage: ai <mode> [files/patterns/prompt]"
-    exit 1
+    log_info "Usage: $0 <mode> [files/patterns] [prompt]"
+    exit 0
 fi
 
 case "$1" in
+    init) shift; mode_init "$@" ;;
     -) shift; mode_file "$@" ;;
     +) shift; mode_script "$@" ;;
     \*) shift; mode_batch "$@" ;;
     .) shift; mode_env "$@" ;;
-    :) shift; mode_pipeline "$@" ;;
-    agi)
-        shift
-        case "$1" in
-            +) shift; agi_watch "$@" ;;
-            -) shift; agi_screenshot "$@" ;;
-            ~) shift; agi_watch "$@" ;;
-            web) shift; agi_webscrape "$@" ;;
-            *) shift; agi_watch "$@" ;;
-        esac
-        ;;
-    aim) shift; aim_monitor "$@" ;;
-    *)
-        PROMPT=$(get_prompt "$*")
-        log "Processing prompt..."
-        ollama_prompt "$PROMPT"
-        ;;
+    :) shift; IFS=':' read -r -a files <<< "$1"; mode_pipeline "${files[@]}" ;;
+    agi) shift; case "$1" in +|~) shift; agi_watch "$@" ;; -) shift; agi_screenshot "$@" ;; *) shift; agi_watch "$@" ;; esac ;;
+    *) PROMPT=$(get_prompt "$*"); ollama_run "$PROMPT" ;;
 esac
