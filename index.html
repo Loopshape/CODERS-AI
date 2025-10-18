@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>2244-1 AI Hybrid</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/themes/prism-tomorrow.min.css" rel="stylesheet"/>
+<style>
+    body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #f8f8f2; }
+    #output { white-space: pre-wrap; margin-top: 10px; border: 1px solid #333; padding: 10px; }
+    input { width: 100%; padding: 8px; margin-top: 10px; background: #272822; border: 1px solid #555; color: #f8f8f2; }
+</style>
+</head>
+<body>
+<h1>2244-1 AI Hybrid</h1>
+<div id="output"></div>
+<input type="text" id="query" placeholder="Type query & hit Enter...">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.30.0/components/prism-python.min.js"></script>
+<script>
+const output = document.getElementById('output');
+const input = document.getElementById('query');
+
+input.addEventListener('keydown', async (e) => {
+    if(e.key === 'Enter') {
+        const query = input.value.trim();
+        if(!query) return;
+
+        // Display user query
+        output.innerHTML += `<pre class="language-python">${Prism.highlight(query, Prism.languages.python, 'python')}</pre>`;
+
+        // Call backend
+        const res = await fetch(`/api/run?query=${encodeURIComponent(query)}`);
+        const data = await res.text();
+
+        // Display AI response
+        output.innerHTML += `<pre class="language-python">${Prism.highlight(data, Prism.languages.python, 'python')}</pre>`;
+        output.scrollTop = output.scrollHeight;
+
+        input.value = '';
+    }
+});
+</script>
+</body>
+</html>
