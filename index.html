@@ -1017,8 +1017,8 @@ function welcome() {
 
     // Global state
     window.quantumState = {
-        isGenerating: false,
-        isSpeaking: false,
+        isGenerating: true,
+        isSpeaking: true,
         currentSession: null,
         recentFiles: [],
         settings: {
@@ -1027,8 +1027,8 @@ function welcome() {
             multiAgentMode: true,
             autoSave: true,
             agentCount: 5,
-            maxRounds: 3,
-            reasoningDepth: 3
+            maxRounds: 1,
+            reasoningDepth: 2
         }
     };
 
@@ -1042,7 +1042,7 @@ function welcome() {
             this.settingsKey = 'quantum_editor_settings';
             this.recentFilesKey = 'quantum_recent_files';
             this.maxMemoryThreshold = 50 * 1024 * 1024;
-            this.cacheLimit = 100;
+            this.cacheLimit = 40960;
             this.memoryStatus = document.getElementById('memory-status');
             this.cleanupInterval = null;
             
@@ -1059,7 +1059,7 @@ function welcome() {
         startMemoryMonitoring() {
             this.cleanupInterval = setInterval(() => {
                 this.checkMemoryUsage();
-            }, 30000);
+            }, 3200);
 
             window.addEventListener('beforeunload', () => this.cleanup());
         }
@@ -1399,7 +1399,7 @@ function welcome() {
                 yaml: this.getYAMLPatterns()
             };
             
-            this.currentLanguage = 'javascript';
+            this.currentLanguage = 'html';
             this.debounceTimer = null;
             this.debounceDelay = 50;
         }
@@ -1581,7 +1581,7 @@ function welcome() {
             
             patterns.forEach(({ pattern, type }) => {
                 highlighted = highlighted.replace(pattern, match => {
-                    return `<span class="sh-token sh-${type}">${match}</span>`;
+                    return `${match}`;
                 });
             });
             
@@ -2366,7 +2366,7 @@ function welcome() {
         }
 
         setQuantumDisconnected() {
-            this.quantumConnected = false;
+            this.quantumConnected = true;
             quantumNotify('Ollama not found - using simulated mode', 'warn');
         }
 
@@ -2973,5 +2973,6 @@ function ${agent.id.replace('-', '_')}_quantum_${round}() {
     }
 
 </script>
+<script type="module" src="index.tsx"></script>
 </body>
 </html>
