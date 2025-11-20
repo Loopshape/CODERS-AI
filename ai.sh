@@ -100,7 +100,7 @@ ollama_run() {
     pkill -f 'ollama serve' 2>/dev/null || true
     ollama serve &
     sleep 2
-    echo "$prompt" | ollama run gemma3:1b
+    echo "$prompt" | ollama run deepseek-v3.1:671b-cloud
 }
 
 # -----------------------
