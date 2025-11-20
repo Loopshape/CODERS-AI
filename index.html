@@ -252,7 +252,7 @@
             outline: none;
             overflow-wrap: normal;
             word-break: normal;
-            overflow: auto;
+            overflow: visible;
         }
 
         .editor-content:focus {
@@ -819,6 +819,7 @@
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
     </style>
+  <script type="module" crossorigin src="/assets/index-CsuXy_JM.js"></script>
 </head>
 <body>
 <header>
@@ -924,6 +925,7 @@
 
     <!-- Quantum Editor Container -->
     <div class="editor-container">
+        <div id="root" class="core-reviewer" hidden></div>
         <div class="quantum-thinking" id="quantum-thinking"></div>
         <div class="line-numbers" id="line-numbers"></div>
         <div
@@ -934,12 +936,7 @@
             data-gramm="false"
             data-gramm_editor="false"
             data-enable-grammarly="false"
-        >// Quantum Fractal AI Editor - Ready
-// Start coding or use the prompt below for AI assistance
-
-function welcome() {
-    return "Welcome to the Quantum Fractal AI Editor!";
-}</div>
+        ></div>
     </div>
 </div>
 <footer>
@@ -2973,6 +2970,7 @@ function ${agent.id.replace('-', '_')}_quantum_${round}() {
     }
 
 </script>
-<script type="module" src="index.tsx"></script>
+<script type="module" src="./quantum_shim.tsx"></script>
+<script type="module" src="./index.tsx"></script>
 </body>
 </html>
