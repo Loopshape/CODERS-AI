@@ -96,11 +96,11 @@ html_enhance() {
 # -----------------------
 ollama_run() {
     local prompt="$1"
-    log_info "Running prompt on gemma3:1b..."
+    log_info "Running prompt on phi:2.7b..."
     pkill -f 'ollama serve' 2>/dev/null || true
     ollama serve &
     sleep 2
-    echo "$prompt" | ollama run deepseek-v3.1:671b-cloud
+    echo "$prompt" | ollama run phi:2.7b
 }
 
 # -----------------------
