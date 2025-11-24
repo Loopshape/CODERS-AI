@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebGL 3D Solar System</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: Monospace;
+            font-size: 13px;
+            text-align: center;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            z-index: 100;
+            display:block;
+            text-shadow: 0 0 5px #000;
+        }
+        a { color: #0080ff; }
+    </style>
+</head>
+<body>
+    <div id="info">
+        Interactive 3D Solar System by a World-Class Software Architect<br/>
+        (Drag to orbit, scroll to zoom, right-drag to pan)
+    </div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- MAIN SETUP ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+        camera.position.set(-150, 100, 250);
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            powerPreference: "high-performance"
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // --- TEXTURES & CONSTANTS ---
+        const textureLoader = new THREE.TextureLoader();
+        const textureBaseUrl = 'https://raw.githubusercontent.com/jeromeetienne/threex.planets/master/images/';
+        const AU = 150; // Astronomical Unit for distance scaling
+
+        // --- LIGHTING ---
+        const pointLight = new THREE.PointLight(0xFFFFFF, 3, 3000);
+        scene.add(pointLight);
+        const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.05);
+        scene.add(ambientLight);
+
+        // --- STARFIELD BACKGROUND ---
+        const starfieldTexture = textureLoader.load(`${textureBaseUrl}galaxy_starfield.png`);
+        const starfieldSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(10000, 64, 64),
+            new THREE.MeshBasicMaterial({
+                map: starfieldTexture,
+                side: THREE.BackSide
+            })
+        );
+        scene.add(starfieldSphere);
+
+        // --- HELPER FUNCTIONS ---
+        function createCelestialBody(name, radius, textureFile, distance, tilt, materialOptions = {}) {
+            const geometry = new THREE.SphereGeometry(radius, 64, 64);
+            const texture = textureLoader.load(textureBaseUrl + textureFile);
+            
+            let material;
+            if (materialOptions.emissive) {
+                material = new THREE.MeshBasicMaterial({ map: texture });
+            } else {
+                material = new THREE.MeshStandardMaterial({ map: texture, ...materialOptions });
+            }
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = THREE.MathUtils.degToRad(tilt);
+            
+            const pivot = new THREE.Object3D();
+            pivot.add(mesh);
+            scene.add(pivot);
+
+            mesh.position.x = distance;
+
+            return { name, mesh, pivot };
+        }
+        
+        function createRings(radius, textureFile, tilt) {
+            const geometry = new THREE.RingGeometry(radius * 1.2, radius * 2, 64);
+            const texture = textureLoader.load(textureBaseUrl + textureFile);
+            texture.rotation = THREE.MathUtils.degToRad(90);
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = Math.PI / 2 + THREE.MathUtils.degToRad(tilt);
+            return mesh;
+        }
+
+        function createOrbitPath(distance) {
+            const points = new THREE.Path().absarc(0, 0, distance, 0, Math.PI * 2, false).getPoints(128);
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2 });
+            const line = new THREE.Line(geometry, material);
+            line.rotation.x = Math.PI / 2;
+            scene.add(line);
+            return line;
+        }
+
+        function createAtmosphere(radius) {
+            const atmosphereGeo = new THREE.SphereGeometry(radius * 1.02, 64, 64);
+            const atmosphereMat = new THREE.ShaderMaterial({
+                vertexShader: `
+                    varying vec3 vertexNormal;
+                    void main() {
+                        vertexNormal = normalize(normalMatrix * normal);
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vertexNormal;
+                    void main() {
+                        float intensity = pow(0.6 - dot(vertexNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+                        gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
+                    }
+                `,
+                blending: THREE.AdditiveBlending,
+                side: THREE.BackSide
+            });
+            const atmosphere = new THREE.Mesh(atmosphereGeo, atmosphereMat);
+            atmosphere.scale.set(1.1, 1.1, 1.1);
+            return atmosphere;
+        }
+
+        // --- CELESTIAL BODY DATA ---
+        const celestialBodiesData = [
+            { name: 'Sun', radius: 16, texture: 'sunmap.jpg', distance: 0, tilt: 0, material: { emissive: true } },
+            { name: 'Mercury', radius: 0.5, texture: 'mercurymap.jpg', distance: 30, tilt: 0.03, orbitSpeed: 0.04, rotSpeed: 0.001 },
+            { name: 'Venus', radius: 0.9, texture: 'venusmap.jpg', distance: 50, tilt: 2.6, orbitSpeed: 0.015, rotSpeed: 0.0005 },
+            { name: 'Earth', radius: 1, texture: 'earthmap1k.jpg', distance: 75, tilt: 23.4, orbitSpeed: 0.01, rotSpeed: 0.01 },
+            { name: 'Mars', radius: 0.6, texture: 'marsmap1k.jpg', distance: 100, tilt: 25.2, orbitSpeed: 0.008, rotSpeed: 0.009 },
+            { name: 'Jupiter', radius: 11, texture: 'jupitermap.jpg', distance: 200, tilt: 3.1, orbitSpeed: 0.002, rotSpeed: 0.025 },
+            { name: 'Saturn', radius: 9, texture: 'saturnmap.jpg', distance: 350, tilt: 26.7, orbitSpeed: 0.001, rotSpeed: 0.023 },
+            { name: 'Uranus', radius: 4, texture: 'uranusmap.jpg', distance: 500, tilt: 97.8, orbitSpeed: 0.0005, rotSpeed: 0.015 },
+            { name: 'Neptune', radius: 3.8, texture: 'neptunemap.jpg', distance: 650, tilt: 28.3, orbitSpeed: 0.0003, rotSpeed: 0.014 }
+        ];
+
+        // --- CREATE SOLAR SYSTEM ---
+        const celestialObjects = {};
+
+        celestialBodiesData.forEach(data => {
+            const body = createCelestialBody(data.name, data.radius, data.texture, data.distance, data.tilt, data.material);
+            celestialObjects[data.name] = { ...body, ...data };
+            if (data.distance > 0) createOrbitPath(data.distance);
+        });
+
+        // Special additions: Sun's glow, Saturn's rings, Earth's atmosphere & Moon
+        const sunGlowTexture = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/lensflare/lensflare0.png');
+        const sunGlowMaterial = new THREE.SpriteMaterial({
+            map: sunGlowTexture,
+            color: 0xffddaa,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            opacity: 0.7
+        });
+        const sunGlow = new THREE.Sprite(sunGlowMaterial);
+        sunGlow.scale.set(200, 200, 1);
+        celestialObjects['Sun'].mesh.add(sunGlow);
+
+        const saturnRings = createRings(celestialObjects['Saturn'].radius, 'saturnring.png', celestialObjects['Saturn'].tilt);
+        celestialObjects['Saturn'].mesh.add(saturnRings);
+
+        const earthAtmosphere = createAtmosphere(celestialObjects['Earth'].radius);
+        celestialObjects['Earth'].mesh.add(earthAtmosphere);
+        
+        const moon = createCelestialBody('Moon', 0.27, 'moonmap1k.jpg', 4, 6.7);
+        celestialObjects['Moon'] = { ...moon, orbitSpeed: 0.05, rotSpeed: 0.005 };
+        celestialObjects['Earth'].mesh.add(moon.pivot); // Moon orbits Earth
+
+        // --- ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            for (const name in celestialObjects) {
+                const obj = celestialObjects[name];
+                if (obj.pivot) {
+                    obj.pivot.rotation.y += (obj.orbitSpeed || 0) * 0.5; // Scaled down for better visuals
+                }
+                if (obj.mesh) {
+                    obj.mesh.rotation.y += (obj.rotSpeed || 0);
+                }
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // --- RESIZE HANDLER ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
+    </script>
+</body>
+</html>
