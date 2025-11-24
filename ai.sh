@@ -96,11 +96,11 @@ html_enhance() {
 # -----------------------
 ollama_run() {
     local prompt="$1"
-    log_info "Running prompt on phi:2.7b..."
+    log_info "Running prompt on THE CUBE..."
     pkill -f 'ollama serve' 2>/dev/null || true
     ollama serve &
     sleep 2
-    echo "$prompt" | ollama run phi:2.7b
+    echo "$prompt" | ollama run cube:latest
 }
 
 # -----------------------
