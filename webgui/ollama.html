@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Command Link v2.0</title>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #000000;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        .info-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 1.5rem;
+            color: #7c3aed; /* Indigo/Purple Theme */
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: 0 0 5px #c084fc;
+            pointer-events: none; 
+            z-index: 10;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Overlay for Title and Instructions -->
+        <div class="info-overlay">
+            <h1 class="text-3xl font-bold mb-2">OLLAMA COMMAND LINK</h1>
+            <p class="text-sm">LLM controls active. Drag/Swipe to inspect.</p>
+            <div class="mt-4 text-sm">
+                <p>Ollama Status: 
+                    <span id="connection-dot" class="status-dot bg-yellow-400"></span> 
+                    <strong id="connection-status">Initializing...</strong>
+                </p>
+                <p class="mt-2">Last Command: 
+                    <strong id="command-output" class="text-yellow-300">Awaiting...</strong>
+                </p>
+                <p class="mt-2">Data Flow: 
+                    <span class="text-xs">
+                        <strong id="data-status" class="text-green-400">Stable</strong>
+                    </span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables for Three.js setup
+        let scene, camera, renderer;
+        let hemisphereGroup; 
+        let particleSystem;
+        let centralCore; 
+        let lineMesh; // Reference to the neural network lines
+        let clock = new THREE.Clock();
+
+        // --- Configuration ---
+        const HEMISPHERE_RADIUS = 5;
+        const PARTICLE_COUNT = 500;
+        const NEURON_COUNT = 50;
+        const ROTATION_SPEED = 0.005;
+
+        // Dynamic Scene Controls
+        let currentParticleSpeedFactor = 1.0;
+        let currentPulseFrequency = 1500; // Heartbeat in ms
+        let currentParticleColor = new THREE.Color(0xffa500); // Initial Orange
+        let neuralGlowFactor = 0; // For network reconfiguration effect
+
+        const AVAILABLE_COLORS = [0xffa500, 0xff00ff, 0x00ff00, 0xffff00];
+        let colorIndex = 0;
+
+        // Variables for interaction (mouse/touch)
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let manualRotation = 0; 
+
+        // UI elements
+        const connectionStatusEl = document.getElementById('connection-status');
+        const connectionDotEl = document.getElementById('connection-dot');
+        const commandOutputEl = document.getElementById('command-output');
+        const dataStatusEl = document.getElementById('data-status');
+
+        // --- Mock Ollama API & Connection Class ---
+        class OllamaLink {
+            constructor() {
+                this.status = 'Disconnected';
+                this.commandInterval = null;
+                this.pulseTime = 0; 
+                this.connect();
+            }
+
+            // Mock Ollama query returning a structured control command
+            mockOllamaQuery() {
+                const commands = [
+                    'increase_flow', 
+                    'reset_speed', 
+                    'change_color', 
+                    'reconfigure_network'
+                ];
+                const command = commands[Math.floor(Math.random() * commands.length)];
+                
+                // Simulate a JSON response from an LLM that outputs structured data
+                return {
+                    "model": "llama3:8b-instruct",
+                    "command": command,
+                    "reason": `LLM initiated ${command} due to simulated load.`
+                };
+            }
+
+            connect() {
+                this.setStatus('Connecting...');
+                connectionDotEl.classList.replace('bg-red-500', 'bg-yellow-400');
+                
+                setTimeout(() => {
+                    this.status = 'Connected';
+                    this.setStatus('Connected to Ollama (Llama 3)');
+                    connectionDotEl.classList.replace('bg-yellow-400', 'bg-green-500');
+                    this.startCommandStream();
+                }, 3000); 
+            }
+
+            startCommandStream() {
+                if (this.commandInterval) clearInterval(this.commandInterval);
+
+                this.commandInterval = setInterval(() => {
+                    if (this.status === 'Connected' && !isDragging) {
+                        this.executeCommand(this.mockOllamaQuery());
+                        this.pulseTime = Date.now(); // Heartbeat on command receipt
+                    }
+                }, 5000); // LLM provides a new command every 5 seconds
+            }
+
+            executeCommand(response) {
+                const cmd = response.command;
+                commandOutputEl.textContent = `${cmd}`;
+                commandOutputEl.style.color = '#fcd34d'; // Amber for new command
+
+                switch(cmd) {
+                    case 'increase_flow':
+                        currentParticleSpeedFactor = 2.5;
+                        currentPulseFrequency = 750;
+                        dataStatusEl.textContent = 'High Load';
+                        dataStatusEl.classList.replace('text-green-400', 'text-red-400');
+                        break;
+                    case 'reset_speed':
+                        currentParticleSpeedFactor = 1.0;
+                        currentPulseFrequency = 1500;
+                        dataStatusEl.textContent = 'Stable';
+                        dataStatusEl.classList.replace('text-red-400', 'text-green-400');
+                        break;
+                    case 'change_color':
+                        colorIndex = (colorIndex + 1) % AVAILABLE_COLORS.length;
+                        currentParticleColor.setHex(AVAILABLE_COLORS[colorIndex]);
+                        particleSystem.material.color = currentParticleColor;
+                        break;
+                    case 'reconfigure_network':
+                        neuralGlowFactor = 1; // Start glow animation
+                        break;
+                }
+
+                // Temporary highlight reset
+                setTimeout(() => { commandOutputEl.style.color = '#fff'; }, 500);
+            }
+
+            getPulseFactor() {
+                if (this.status !== 'Connected') return 0;
+                
+                const timeSincePulse = Date.now() - this.pulseTime;
+                let factor = 1.0 - (timeSincePulse / currentPulseFrequency); 
+                return Math.max(0, factor); 
+            }
+
+            setStatus(message) {
+                connectionStatusEl.textContent = message;
+                this.status = message;
+            }
+        }
+        
+        let ollamaLink;
+
+        // --- Initialization ---
+
+        function init() {
+            const container = document.getElementById('container');
+
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000); 
+
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 10;
+            
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 5); 
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 10);
+            pointLight.position.set(5, 5, 5);
+            scene.add(pointLight);
+
+            // Create the main group for the rotatable AI structure
+            hemisphereGroup = new THREE.Group();
+            scene.add(hemisphereGroup);
+
+            // 5. Build Core Components
+            createHemisphereShell();
+            createNeuralBase();
+            createDataParticles();
+            createCentralCore();
+            
+            // 6. Start Mock Ollama Connection
+            ollamaLink = new OllamaLink();
+
+            // 7. Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            setupInteractionHandlers(renderer.domElement);
+            
+            animate();
+        }
+
+        // --- Core 3D Object Creation ---
+
+        function createHemisphereShell() {
+            const geometry = new THREE.SphereGeometry(HEMISPHERE_RADIUS, 64, 64, 0, Math.PI * 2, 0, Math.PI / 2); 
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x8b5cf6, // Indigo/Purple 
+                emissive: 0x3b0764, 
+                opacity: 0.1, 
+                transparent: true,
+                side: THREE.DoubleSide,
+                shininess: 100
+            });
+            const hemisphere = new THREE.Mesh(geometry, material);
+            hemisphere.rotation.x = Math.PI; 
+            hemisphereGroup.add(hemisphere);
+        }
+
+        function createNeuralBase() {
+            const nodes = [];
+            const positions = [];
+            for (let i = 0; i < NEURON_COUNT; i++) {
+                const x = (Math.random() - 0.5) * HEMISPHERE_RADIUS * 1.8;
+                const z = (Math.random() - 0.5) * HEMISPHERE_RADIUS * 1.8;
+                positions.push(x, 0, z); 
+                nodes.push(new THREE.Vector3(x, 0, z));
+            }
+            
+            const nodeGeometry = new THREE.BufferGeometry();
+            nodeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            const nodeMaterial = new THREE.PointsMaterial({ color: 0xc084fc, size: 0.15, sizeAttenuation: true, transparent: true, opacity: 0.8 });
+            const nodeMesh = new THREE.Points(nodeGeometry, nodeMaterial);
+            hemisphereGroup.add(nodeMesh);
+
+            const linePositions = [];
+            for (let i = 0; i < NEURON_COUNT; i++) {
+                const neighbors = nodes.slice().sort((a, b) => a.distanceTo(nodes[i]) - b.distanceTo(nodes[i])).slice(1, Math.floor(Math.random() * 3) + 2);
+                neighbors.forEach(neighbor => {
+                    linePositions.push(nodes[i].x, nodes[i].y, nodes[i].z);
+                    linePositions.push(neighbor.x, neighbor.y, neighbor.z);
+                });
+            }
+
+            const lineGeometry = new THREE.BufferGeometry();
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+            
+            // Store reference to lineMesh
+            lineMesh = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ 
+                color: 0x8b5cf6, 
+                opacity: 0.2, 
+                transparent: true 
+            }));
+            hemisphereGroup.add(lineMesh);
+        }
+        
+        function createDataParticles() {
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const velocities = []; 
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI / 2;
+                const r = Math.random() * HEMISPHERE_RADIUS * 0.9;
+                
+                positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = r * Math.cos(phi);
+                positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+                
+                velocities.push((Math.random() - 0.5) * 0.005, (Math.random() - 0.5) * 0.005, (Math.random() - 0.5) * 0.005);
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.velocities = velocities; 
+
+            // Store reference to particleSystem material
+            const particleMaterial = new THREE.PointsMaterial({ color: currentParticleColor, size: 0.05, sizeAttenuation: true });
+            particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            hemisphereGroup.add(particleSystem);
+        }
+
+        function createCentralCore() {
+            const geometry = new THREE.SphereGeometry(0.5, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
+            centralCore = new THREE.Mesh(geometry, material);
+            
+            const coreLight = new THREE.PointLight(0x00ffff, 10, 5, 2);
+            centralCore.add(coreLight);
+
+            hemisphereGroup.add(centralCore);
+        }
+
+        // --- Animation Loop Updates ---
+        const NEURAL_GLOW_DAMPING = 0.95;
+
+        function updateSceneControls() {
+            // 1. Update Central Core Pulse
+            if (ollamaLink && ollamaLink.status === 'Connected') {
+                const pulseFactor = ollamaLink.getPulseFactor();
+                const scale = 1 + (Math.sin(pulseFactor * Math.PI) * 0.4); 
+                centralCore.scale.set(scale, scale, scale);
+
+                centralCore.children[0].intensity = 10 + (scale * 20); 
+                centralCore.children[0].power = 4 * Math.PI * centralCore.children[0].intensity;
+                
+                centralCore.rotation.y += 0.02;
+                centralCore.rotation.x += 0.01;
+            }
+
+            // 2. Animate Neural Network Glow (Reconfigure Effect)
+            if (neuralGlowFactor > 0.05) {
+                neuralGlowFactor *= NEURAL_GLOW_DAMPING; // Decay effect
+                lineMesh.material.opacity = 0.2 + (neuralGlowFactor * 0.7); // Max opacity 0.9
+                lineMesh.material.needsUpdate = true;
+            } else {
+                 lineMesh.material.opacity = 0.2; // Base opacity
+            }
+        }
+
+        function updateDataParticles() {
+            const positions = particleSystem.geometry.attributes.position.array;
+            const velocities = particleSystem.geometry.velocities;
+            const radiusSq = HEMISPHERE_RADIUS * HEMISPHERE_RADIUS * 0.81; 
+            
+            // Adjust particle speed based on LLM command and user interaction
+            const dragSpeedMultiplier = isDragging ? 0.4 : 1.0; 
+            const particleSpeed = 0.005 * currentParticleSpeedFactor * dragSpeedMultiplier; 
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+                let x = positions[i3];
+                let y = positions[i3 + 1];
+                let z = positions[i3 + 2];
+
+                // 1. Move particle
+                x += velocities[i3] * particleSpeed;
+                y += velocities[i3 + 1] * particleSpeed;
+                z += velocities[i3 + 2] * particleSpeed;
+
+                // 2. Check boundary collision 
+                const currentRadiusSq = x * x + y * y + z * z;
+                
+                if (currentRadiusSq > radiusSq || y < 0) {
+                    velocities[i3] *= -0.9;
+                    velocities[i3 + 1] *= -0.9;
+                    velocities[i3 + 2] *= -0.9;
+                    
+                    const ratio = Math.sqrt(radiusSq / currentRadiusSq) * 0.98;
+                    x *= ratio;
+                    y *= ratio;
+                    z *= ratio;
+                    
+                    if (y < 0) y = Math.abs(y);
+                }
+
+                // 3. Update position
+                positions[i3] = x;
+                positions[i3 + 1] = y;
+                positions[i3 + 2] = z;
+            }
+
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Auto-rotate the group
+            hemisphereGroup.rotation.y += ROTATION_SPEED + (manualRotation * 0.01);
+            manualRotation *= 0.99; 
+
+            // Update effects driven by the LLM
+            updateSceneControls();
+            updateDataParticles();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Interaction Handlers (Rotation via Drag/Swipe) ---
+
+        function setupInteractionHandlers(element) {
+            element.addEventListener('mousedown', onPointerDown, false);
+            window.addEventListener('mouseup', onPointerUp, false);
+            window.addEventListener('mousemove', onPointerMove, false);
+
+            element.addEventListener('touchstart', onPointerDown, false);
+            window.addEventListener('touchend', onPointerUp, false);
+            element.addEventListener('touchmove', onPointerMove, { passive: false });
+        }
+
+        function getClientPosition(event) {
+            if (event.touches && event.touches.length > 0) {
+                return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            }
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        function onPointerDown(event) {
+            isDragging = true;
+            previousMousePosition = getClientPosition(event);
+            dataStatusEl.textContent = 'User Override';
+            dataStatusEl.classList.replace('text-green-400', 'text-orange-400');
+            dataStatusEl.classList.replace('text-red-400', 'text-orange-400');
+            event.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+            // Restore status based on current speed factor after drag stops
+            if (currentParticleSpeedFactor > 1.0) {
+                 dataStatusEl.textContent = 'High Load';
+                 dataStatusEl.classList.replace('text-orange-400', 'text-red-400');
+            } else {
+                 dataStatusEl.textContent = 'Stable';
+                 dataStatusEl.classList.replace('text-orange-400', 'text-green-400');
+            }
+        }
+
+        function onPointerMove(event) {
+            if (!isDragging) return;
+
+            const currentPosition = getClientPosition(event);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            manualRotation = deltaX * 0.1;
+
+            hemisphereGroup.rotation.y += deltaX * 0.01;
+            hemisphereGroup.rotation.x += deltaY * 0.01;
+
+            hemisphereGroup.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, hemisphereGroup.rotation.x));
+
+            previousMousePosition = currentPosition;
+            event.preventDefault();
+        }
+
+        // --- Utility Functions ---
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Start everything
+        window.onload = init;
+    </script>
+</body>
+</html>
+
+

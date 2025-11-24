@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AstroView :: Planetarium v2.0 (CPU Only)</title>
+    <!-- Tailwind CSS for surrounding UI/Aesthetics -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #0d1117; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Space Mono', monospace;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: #000000;
+        }
+        #controls-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #4f46e5;
+            box-shadow: 0 0 10px rgba(79, 70, 229, 0.5);
+        }
+        .text-realtime {
+            text-shadow: 0 0 5px #fef08a;
+        }
+    </style>
+</head>
+<body>
+    <div class="absolute inset-0 flex flex-col items-center justify-center p-4">
+        <canvas id="sky-canvas"></canvas>
+        
+        <div id="controls-box" class="absolute top-4 right-4 p-3 rounded-lg text-xs text-indigo-300 select-none">
+            <p class="text-base font-bold text-center mb-1">CELESTIAL SPHERE</p>
+            <p><strong>Drag/Swipe:</strong> Look Around</p>
+            <p><strong>Auto-Rotation:</strong> Eastward Drift</p>
+        </div>
+        
+        <div id="info-box" class="absolute bottom-4 left-4 p-3 rounded-lg text-xs text-gray-200 bg-gray-900 border border-gray-700 font-mono">
+            <p class="text-xs mb-1">REAL-TIME POSITIONING</p>
+            <p><span class="text-lime-400">Time:</span> <strong id="time-display" class="text-realtime">--:--:--</strong></p>
+            <p><span class="text-yellow-400">RA:</span> <strong id="ra-display">0.00°</strong></p>
+            <p><span class="text-cyan-400">Dec:</span> <strong id="dec-display">0.00°</strong></p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("sky-canvas");
+        const ctx = canvas.getContext("2d");
+        const raDisplay = document.getElementById('ra-display');
+        const decDisplay = document.getElementById('dec-display');
+        const timeDisplay = document.getElementById('time-display');
+
+        // --- Configuration ---
+        const Z_SCALE = 2; // Simulated Sphere Radius
+        const FOV = 2.0;   // Field of View factor (controls perspective)
+        const DRAG_SENSITIVITY = 0.005;
+        const STARFIELD_COUNT = 2000;
+
+        // Current view angles (in radians)
+        let viewerRA = 0; // Right Ascension (Horizontal look)
+        let viewerDec = 0; // Declination (Vertical look)
+
+        // --- Time and Ephemeris Simplification ---
+        let startTime = Date.now();
+        const BASE_ORBITAL_SPEED = 0.0001; // Base speed for simulation (radians/ms)
+
+        /**
+         * Converts time difference since load into a simulated angle based on period.
+         * @param {number} periodDays - Sidereal period in days (Earth year = 365.25 days)
+         * @returns {number} Angle in radians
+         */
+        function calculateAngle(periodDays) {
+            const timeElapsed = Date.now() - startTime; // Time in milliseconds
+            const anglePerMs = (Math.PI * 2) / (periodDays * 24 * 60 * 60 * 1000);
+            return (timeElapsed * anglePerMs) % (Math.PI * 2);
+        }
+
+        // --- Data Model: Solar System Objects (Moving) ---
+        // Simplified Sidereal Periods in Days
+        const SOLAR_SYSTEM_OBJECTS = [
+            { name: 'Sun', symbol: '☉', color: '#FFD700', size: 10, periodDays: 365.25, raOffset: 0 },
+            { name: 'Moon', symbol: '☾', color: '#A0AEC0', size: 8, periodDays: 29.53, raOffset: 90 },
+            { name: 'Mercury', symbol: '☿', color: '#B5A695', size: 6, periodDays: 88, raOffset: 120 },
+            { name: 'Venus', symbol: '♀', color: '#FFC0CB', size: 7, periodDays: 225, raOffset: 20 },
+            { name: 'Mars', symbol: '♂', color: '#DD4444', size: 7, periodDays: 687, raOffset: 300 },
+            { name: 'Jupiter', symbol: '♃', color: '#DD8833', size: 9, periodDays: 4333, raOffset: 180 },
+            { name: 'Saturn', symbol: '♄', color: '#AAAA33', size: 8, periodDays: 10759, raOffset: 60 },
+        ];
+
+        // --- Data Model: Static Stars and Constellations (Reference) ---
+        const CONSTELLATION_DATA = {
+            stars: [
+                // Ursa Major (Big Dipper)
+                { ra: 165, dec: 62, name: 'Dubhe', size: 5, color: '#FFFFFF' }, 
+                { ra: 180, dec: 60, name: 'Merak', size: 4, color: '#EEDDFF' }, 
+                { ra: 210, dec: 50, name: 'Alioth', size: 5, color: '#FFFFFF' }, 
+                { ra: 230, dec: 40, name: 'Alkaid', size: 3, color: '#EEDDFF' }, 
+                // Orion
+                { ra: 70, dec: 8, name: 'Betelgeuse', size: 6, color: '#FF9999' }, 
+                { ra: 85, dec: -10, name: 'Rigel', size: 6, color: '#AAEEFF' },   
+                { ra: 80, dec: 0, name: 'Alnilam', size: 5, color: '#FFFFFF' },
+            ],
+            lines: [ [0, 1], [1, 2], [2, 3], [4, 5], [5, 6] ]
+        };
+
+        // --- Starfield Initialization (2000 random background stars) ---
+        const starField = Array.from({ length: STARFIELD_COUNT }, () => ({
+            ra: Math.random() * 360,
+            dec: Math.random() * 180 - 90,
+            size: Math.random() * 1.5 + 0.5,
+            color: '#FFFFFF' + (Math.floor(Math.random() * 90) + 10).toString(16), // Varied faintness
+        }));
+        
+        const allStaticStars = [...CONSTELLATION_DATA.stars, ...starField];
+
+        // --- Math Utilities (Reused from previous version) ---
+        function toRadians(degrees) { return degrees * Math.PI / 180; }
+        function toDegrees(radians) { return radians * 180 / Math.PI; }
+        function normalizeAngle(angle) { return (angle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2); }
+        
+        function raDecToCartesian(ra, dec) {
+            const cosDec = Math.cos(dec);
+            return {
+                x: Z_SCALE * cosDec * Math.cos(ra),
+                y: Z_SCALE * Math.sin(dec),
+                z: Z_SCALE * cosDec * Math.sin(ra) // Using RA for Z here matches the standard spherical-to-cartesian
+            };
+        }
+
+        function rotateCartesian(p) {
+            const pitch = viewerDec; // Rotation around X axis
+            const yaw = viewerRA;    // Rotation around Y axis
+
+            let x = p.x;
+            let y = p.y;
+            let z = p.z;
+
+            // Rotation around Y (Yaw) - Horizontal
+            let cosY = Math.cos(yaw);
+            let sinY = Math.sin(yaw);
+            let tempX = x * cosY + z * sinY;
+            let tempZ = z * cosY - x * sinY;
+            x = tempX;
+            z = tempZ;
+
+            // Rotation around X (Pitch) - Vertical
+            let cosP = Math.cos(pitch);
+            let sinP = Math.sin(pitch);
+            let tempY = y * cosP - z * sinP;
+            tempZ = z * cosP + y * sinP;
+            y = tempY;
+            z = tempZ;
+
+            return { x, y, z };
+        }
+
+        function projectToCanvas(rotatedP, canvasWidth, canvasHeight) {
+            if (rotatedP.z <= 0) return null; 
+            
+            const scale = FOV / rotatedP.z;
+            const x2D = rotatedP.x * scale + canvasWidth / 2;
+            const y2D = rotatedP.y * scale + canvasHeight / 2;
+            const sizeScale = 1 / rotatedP.z;
+
+            return { x: x2D, y: y2D, sizeScale: sizeScale };
+        }
+
+        // --- Drawing Functions ---
+
+        function drawObject(obj, projected, isPlanet = false) {
+            if (!projected) return;
+
+            const baseSize = isPlanet ? obj.size : obj.size;
+            const size = baseSize * projected.sizeScale * 0.5;
+            
+            ctx.beginPath();
+            ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2);
+            
+            ctx.shadowBlur = size * 3;
+            ctx.shadowColor = obj.color;
+            
+            ctx.fillStyle = obj.color;
+            ctx.fill();
+            
+            ctx.shadowBlur = 0; // Reset shadow
+
+            if (isPlanet) {
+                // Draw symbol for major objects
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = `${Math.max(12, size * 1.5)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(obj.symbol, projected.x, projected.y + (size / 10));
+            }
+        }
+        
+        function drawEquatorAndEcliptic(canvasWidth, canvasHeight) {
+            // The Celestial Equator is Dec = 0 (a horizontal circle)
+            // The Ecliptic is Dec = 23.4 degrees (tilted circle, slightly offset)
+
+            const steps = 100;
+            const raStep = toRadians(360 / steps);
+            
+            // Draw Celestial Equator (Dec = 0)
+            ctx.strokeStyle = 'rgba(79, 70, 229, 0.5)'; // Indigo
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            for (let i = 0; i <= steps; i++) {
+                const ra = raStep * i;
+                let p = raDecToCartesian(ra, toRadians(0));
+                let rotatedP = rotateCartesian(p);
+                let projected = projectToCanvas(rotatedP, canvasWidth, canvasHeight);
+                
+                if (projected) {
+                    if (i === 0) {
+                        ctx.moveTo(projected.x, projected.y);
+                    } else {
+                        ctx.lineTo(projected.x, projected.y);
+                    }
+                }
+            }
+            ctx.stroke();
+
+            // Draw Ecliptic (Simplified Dec = 23.4 degrees, for visualization)
+            ctx.strokeStyle = 'rgba(255, 100, 0, 0.5)'; // Orange
+            ctx.setLineDash([5, 5]); // Dashed line
+            ctx.beginPath();
+
+            for (let i = 0; i <= steps; i++) {
+                const ra = raStep * i;
+                // Simplified Ecliptic: treat it as a path offset from the equator
+                const decOffset = 0.409 * Math.sin(ra); // Approx obliquity of 23.4 degrees
+                let p = raDecToCartesian(ra, decOffset); 
+                let rotatedP = rotateCartesian(p);
+                let projected = projectToCanvas(rotatedP, canvasWidth, canvasHeight);
+                
+                if (projected) {
+                    if (i === 0) {
+                        ctx.moveTo(projected.x, projected.y);
+                    } else {
+                        ctx.lineTo(projected.x, projected.y);
+                    }
+                }
+            }
+            ctx.stroke();
+            ctx.setLineDash([]); // Reset line dash
+        }
+
+        // --- Animation Loop ---
+
+        function draw() {
+            requestAnimationFrame(draw);
+
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+
+            // 1. Clear Canvas (fade effect)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 2. Automatic Rotation (Simulate Earth's rotation/time passing)
+            viewerRA += 0.0001; // Gentle eastward drift
+
+            // 3. Draw Grid Lines (Equator and Ecliptic)
+            drawEquatorAndEcliptic(canvasWidth, canvasHeight);
+
+            // 4. Draw Static Stars (Starfield and Constellations)
+            const projectedStatic = [];
+            
+            allStaticStars.forEach((star, index) => {
+                const raRad = toRadians(star.ra);
+                const decRad = toRadians(star.dec);
+                
+                let p = raDecToCartesian(raRad, decRad);
+                let rotatedP = rotateCartesian(p);
+                let projected = projectToCanvas(rotatedP, canvasWidth, canvasHeight);
+
+                // Store only the major constellation stars for lines
+                if (index < CONSTELLATION_DATA.stars.length) {
+                    projectedStatic[index] = projected;
+                }
+                
+                drawObject(star, projected, false);
+            });
+            
+            // 5. Draw Constellation Lines
+            ctx.strokeStyle = '#374151'; // Slate gray
+            ctx.lineWidth = 1.5;
+            
+            CONSTELLATION_DATA.lines.forEach(([i, j]) => {
+                const start = projectedStatic[i];
+                const end = projectedStatic[j];
+
+                if (start && end) {
+                    ctx.beginPath();
+                    ctx.moveTo(start.x, start.y);
+                    ctx.lineTo(end.x, end.y);
+                    ctx.stroke();
+                }
+            });
+
+            // 6. Draw Moving Solar System Objects
+            SOLAR_SYSTEM_OBJECTS.forEach(obj => {
+                // Calculate position based on elapsed time and period
+                const orbitAngle = calculateAngle(obj.periodDays);
+                
+                // Position all solar system objects on the Ecliptic (Dec = ~0)
+                const raRad = orbitAngle + toRadians(obj.raOffset);
+                const decRad = toRadians(5); // Slight declination to place on Ecliptic plane
+
+                let p = raDecToCartesian(raRad, decRad);
+                let rotatedP = rotateCartesian(p);
+                let projected = projectToCanvas(rotatedP, canvasWidth, canvasHeight);
+
+                drawObject(obj, projected, true);
+            });
+
+
+            // 7. Update Info Panel
+            const currentRA = toDegrees(normalizeAngle(viewerRA));
+            const currentDec = toDegrees(viewerDec);
+            raDisplay.textContent = `${currentRA.toFixed(2)}°`;
+            decDisplay.textContent = `${currentDec.toFixed(2)}°`;
+            
+            const now = new Date();
+            timeDisplay.textContent = now.toLocaleTimeString();
+        }
+        
+        // --- Initialization and Resize ---
+
+        function resizeCanvas() {
+            // Ensure the canvas maintains aspect ratio while filling screen
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.95;
+            canvas.width = size;
+            canvas.height = size;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        // --- Movement and Controls (Touch/Click Drag) ---
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        
+        function toVector2(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX !== undefined ? e.clientX : e.touches?.[0]?.clientX;
+            const clientY = e.clientY !== undefined ? e.clientY : e.touches?.[0]?.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top }; 
+        }
+
+        function onPointerDown(e) {
+            isDragging = true;
+            previousMousePosition = toVector2(e);
+            e.preventDefault();
+        }
+
+        function onPointerMove(e) {
+            if (!isDragging) return;
+
+            const currentPosition = toVector2(e);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            // Horizontal movement (X) affects viewerRA (Yaw)
+            viewerRA -= deltaX * DRAG_SENSITIVITY; 
+            // Vertical movement (Y) affects viewerDec (Pitch)
+            viewerDec += deltaY * DRAG_SENSITIVITY; 
+
+            // Clamp vertical rotation (Declination)
+            viewerDec = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, viewerDec));
+            
+            previousMousePosition = currentPosition;
+            e.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+        }
+
+        // Attach integrated pointer event handlers
+        canvas.addEventListener('mousedown', onPointerDown, false);
+        document.addEventListener('mouseup', onPointerUp, false);
+        document.addEventListener('mousemove', onPointerMove, false);
+
+        canvas.addEventListener('touchstart', onPointerDown, false);
+        document.addEventListener('touchend', onPointerUp, false);
+        document.addEventListener('touchmove', onPointerMove, { passive: false }); 
+
+        // Start the simulation
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>
+
+

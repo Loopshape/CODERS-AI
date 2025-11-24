@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Haloflare Orchestrator v3.0</title>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #03040f; /* Deep Space Blue */
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        .info-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            padding: 1.5rem;
+            color: #4df1ff; /* Bright Cyan */
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: 0 0 8px #00ffff;
+            pointer-events: none; 
+            z-index: 10;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Overlay for Title and Instructions -->
+        <div class="info-overlay">
+            <h1 class="text-3xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-500">
+                COSMIC HALOFLARE
+            </h1>
+            <p class="text-sm text-indigo-300">LLM controls astronomical data. Drag to navigate.</p>
+            <div class="mt-4 text-sm">
+                <p>Ollama Status: 
+                    <span id="connection-dot" class="status-dot bg-yellow-400"></span> 
+                    <strong id="connection-status">Initializing...</strong>
+                </p>
+                <p class="mt-2">Cosmic Command: 
+                    <strong id="command-output" class="text-yellow-300">Awaiting LLM Directive</strong>
+                </p>
+                <p class="mt-2">Data Integrity: 
+                    <span class="text-xs">
+                        <strong id="data-status" class="text-green-400">Stable</strong>
+                    </span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables for Three.js setup
+        let scene, camera, renderer;
+        let cosmicGroup; // Replaced hemisphereGroup
+        let starField;
+        let galacticCore; 
+        let clock = new THREE.Clock();
+
+        // --- Configuration ---
+        const HALO_RADIUS = 50;
+        const STAR_COUNT = 50000;
+        const ROTATION_SPEED = 0.0005; // Much slower for cosmic feel
+
+        // Dynamic Scene Controls
+        let currentParticleSpeedFactor = 1.0;
+        let currentPulseFrequency = 2500; // Slower, cosmic heartbeat in ms
+        let coreFlareIntensity = 1.0; 
+
+        const COSMIC_COLORS = [0xffffff, 0xff00ff, 0x4ddbff, 0xffa500]; // White, Magenta, Cyan, Orange-Gold
+        let colorIndex = 0;
+
+        // Variables for interaction (mouse/touch)
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let manualRotation = 0; 
+
+        // UI elements
+        const connectionStatusEl = document.getElementById('connection-status');
+        const connectionDotEl = document.getElementById('connection-dot');
+        const commandOutputEl = document.getElementById('command-output');
+        const dataStatusEl = document.getElementById('data-status');
+
+        // --- Mock Ollama API & Connection Class ---
+        class OllamaLink {
+            constructor() {
+                this.status = 'Disconnected';
+                this.commandInterval = null;
+                this.pulseTime = 0; 
+                this.connect();
+            }
+
+            // Mock Ollama query returning a structured cosmic command
+            mockOllamaQuery() {
+                const commands = [
+                    'initiate_haloflare', 
+                    'stabilize_halo', 
+                    'shift_constellation', 
+                    'stabilize_halo',
+                    'shift_constellation'
+                ];
+                // Cycle through commands for a predictable demo
+                this.commandIndex = (this.commandIndex === undefined) ? 0 : (this.commandIndex + 1) % commands.length;
+                const command = commands[this.commandIndex];
+                
+                return {
+                    "model": "llama3:40b-astronomy",
+                    "command": command,
+                    "reason": `LLM initiated ${command} based on external stellar drift detection.`
+                };
+            }
+
+            connect() {
+                this.setStatus('Connecting...');
+                connectionDotEl.classList.replace('bg-red-500', 'bg-yellow-400');
+                
+                setTimeout(() => {
+                    this.status = 'Connected';
+                    this.setStatus('Connected to Ollama (Astro 40b)');
+                    connectionDotEl.classList.replace('bg-yellow-400', 'bg-green-500');
+                    this.startCommandStream();
+                }, 3000); 
+            }
+
+            startCommandStream() {
+                if (this.commandInterval) clearInterval(this.commandInterval);
+
+                this.commandInterval = setInterval(() => {
+                    if (this.status === 'Connected' && !isDragging) {
+                        this.executeCommand(this.mockOllamaQuery());
+                        this.pulseTime = Date.now(); // Heartbeat on command receipt
+                    }
+                }, 7000); // LLM provides a new command every 7 seconds
+            }
+
+            executeCommand(response) {
+                const cmd = response.command;
+                commandOutputEl.textContent = cmd.toUpperCase().replace(/_/g, ' ');
+                commandOutputEl.style.color = '#fcd34d'; 
+
+                switch(cmd) {
+                    case 'initiate_haloflare':
+                        currentParticleSpeedFactor = 3.0; // Fast particles
+                        currentPulseFrequency = 500; // Rapid pulse
+                        coreFlareIntensity = 10.0; // Extreme core flare
+                        dataStatusEl.textContent = 'HALOFLARE ACTIVE';
+                        dataStatusEl.classList.replace('text-green-400', 'text-red-400');
+                        break;
+                    case 'stabilize_halo':
+                        currentParticleSpeedFactor = 1.0;
+                        currentPulseFrequency = 2500;
+                        coreFlareIntensity = 1.0; 
+                        dataStatusEl.textContent = 'STABLE (Maintenance)';
+                        dataStatusEl.classList.replace('text-red-400', 'text-green-400');
+                        break;
+                    case 'shift_constellation':
+                        colorIndex = (colorIndex + 1) % COSMIC_COLORS.length;
+                        starField.material.color.setHex(COSMIC_COLORS[colorIndex]);
+                        starField.material.needsUpdate = true;
+                        dataStatusEl.textContent = 'COORDS SHIFTED';
+                        dataStatusEl.classList.add('text-yellow-400');
+                        break;
+                }
+
+                setTimeout(() => { 
+                    commandOutputEl.style.color = '#fff'; 
+                    dataStatusEl.classList.remove('text-yellow-400');
+                }, 500);
+            }
+
+            getPulseFactor() {
+                if (this.status !== 'Connected') return 0;
+                
+                const timeSincePulse = Date.now() - this.pulseTime;
+                let factor = 1.0 - (timeSincePulse / currentPulseFrequency); 
+                return Math.max(0, factor); 
+            }
+
+            setStatus(message) {
+                connectionStatusEl.textContent = message;
+                this.status = message;
+            }
+        }
+        
+        let ollamaLink;
+
+        // --- Initialization ---
+
+        function init() {
+            const container = document.getElementById('container');
+
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x03040f); 
+
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = HALO_RADIUS * 1.5;
+            
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 4. Lighting (Minimal ambient light for contrast)
+            const ambientLight = new THREE.AmbientLight(0x101030, 0.5); 
+            scene.add(ambientLight);
+            
+            // Create the main group for the rotatable cosmic structure
+            cosmicGroup = new THREE.Group();
+            scene.add(cosmicGroup);
+
+            // 5. Build Core Components
+            createGalacticCore();
+            createCosmicStarField();
+            
+            // 6. Start Mock Ollama Connection
+            ollamaLink = new OllamaLink();
+
+            // 7. Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            setupInteractionHandlers(renderer.domElement);
+            
+            animate();
+        }
+
+        // --- Core 3D Object Creation ---
+
+        function createGalacticCore() {
+            const geometry = new THREE.SphereGeometry(3, 64, 64);
+            // Base material for the core (low light)
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.8 });
+            galacticCore = new THREE.Mesh(geometry, material);
+            
+            // The main point light for the haloflare effect
+            const coreLight = new THREE.PointLight(0x00ffff, 50, HALO_RADIUS * 2, 2);
+            galacticCore.add(coreLight);
+
+            cosmicGroup.add(galacticCore);
+        }
+
+        function createCosmicStarField() {
+            const starGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(STAR_COUNT * 3);
+            const velocities = []; 
+            const radiusSq = HALO_RADIUS * HALO_RADIUS;
+
+            for (let i = 0; i < STAR_COUNT; i++) {
+                // Distribute stars randomly in a sphere
+                const r = Math.pow(Math.random(), 1/3) * HALO_RADIUS; 
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = r * Math.cos(phi);
+                positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+                
+                // Radial velocity component (slow outward drift)
+                const radialVelocity = 0.001 * Math.random();
+                velocities.push(
+                    (positions[i * 3 + 0] / r) * radialVelocity, 
+                    (positions[i * 3 + 1] / r) * radialVelocity, 
+                    (positions[i * 3 + 2] / r) * radialVelocity
+                );
+            }
+            
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            starGeometry.velocities = velocities; 
+
+            const starMaterial = new THREE.PointsMaterial({ 
+                color: new THREE.Color(COSMIC_COLORS[colorIndex]), 
+                size: 0.1, 
+                sizeAttenuation: true 
+            });
+            starField = new THREE.Points(starGeometry, starMaterial);
+            cosmicGroup.add(starField);
+        }
+
+        // --- Animation Loop Updates ---
+
+        function updateGalacticCore() {
+            if (!ollamaLink || ollamaLink.status !== 'Connected') {
+                galacticCore.scale.set(1, 1, 1);
+                return;
+            }
+
+            // Pulse effect based on heartbeat factor, scaled by flare intensity
+            const pulseFactor = ollamaLink.getPulseFactor();
+            const scale = 1 + (Math.sin(pulseFactor * Math.PI) * 0.2 * coreFlareIntensity); 
+            galacticCore.scale.set(scale, scale, scale);
+
+            // Light intensity and radius is driven by flare intensity
+            galacticCore.children[0].intensity = 50 * coreFlareIntensity; 
+            galacticCore.children[0].distance = HALO_RADIUS * 2 * coreFlareIntensity;
+
+            galacticCore.rotation.y += 0.005;
+        }
+
+        function updateStarField() {
+            const positions = starField.geometry.attributes.position.array;
+            const velocities = starField.geometry.velocities;
+            const radiusSq = HALO_RADIUS * HALO_RADIUS;
+            
+            // Speed adjusted by LLM command
+            const particleSpeed = 1.0 * currentParticleSpeedFactor; 
+
+            for (let i = 0; i < STAR_COUNT; i++) {
+                const i3 = i * 3;
+                let x = positions[i3];
+                let y = positions[i3 + 1];
+                let z = positions[i3 + 2];
+
+                // 1. Move star based on its unique velocity (radial drift)
+                x += velocities[i3] * particleSpeed;
+                y += velocities[i3 + 1] * particleSpeed;
+                z += velocities[i3 + 2] * particleSpeed;
+
+                // 2. Check boundary and wrap around
+                const currentRadiusSq = x * x + y * y + z * z;
+                
+                if (currentRadiusSq > radiusSq) {
+                    // Reset star position back near the core or opposite edge
+                    const r = Math.sqrt(currentRadiusSq);
+                    
+                    // Simple wrapping/teleportation to opposite side
+                    x = -x * 0.5;
+                    y = -y * 0.5;
+                    z = -z * 0.5;
+                }
+
+                // 3. Update position
+                positions[i3] = x;
+                positions[i3 + 1] = y;
+                positions[i3 + 2] = z;
+            }
+
+            starField.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Auto-rotate the entire cosmic group
+            cosmicGroup.rotation.y += ROTATION_SPEED + (manualRotation * 0.005);
+            manualRotation *= 0.99; 
+            
+            // Update effects driven by the LLM
+            updateGalacticCore();
+            updateStarField();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Interaction Handlers (Rotation via Drag/Swipe) ---
+
+        function setupInteractionHandlers(element) {
+            element.addEventListener('mousedown', onPointerDown, false);
+            window.addEventListener('mouseup', onPointerUp, false);
+            window.addEventListener('mousemove', onPointerMove, false);
+
+            element.addEventListener('touchstart', onPointerDown, false);
+            window.addEventListener('touchend', onPointerUp, false);
+            element.addEventListener('touchmove', onPointerMove, { passive: false });
+        }
+
+        function getClientPosition(event) {
+            if (event.touches && event.touches.length > 0) {
+                return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            }
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        function onPointerDown(event) {
+            isDragging = true;
+            previousMousePosition = getClientPosition(event);
+            dataStatusEl.textContent = 'USER OBSERVATION';
+            dataStatusEl.classList.replace('text-green-400', 'text-orange-400');
+            dataStatusEl.classList.replace('text-red-400', 'text-orange-400');
+            event.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+            // Restore status based on current state
+            if (coreFlareIntensity > 1.0) {
+                 dataStatusEl.textContent = 'HALOFLARE ACTIVE';
+                 dataStatusEl.classList.replace('text-orange-400', 'text-red-400');
+            } else {
+                 dataStatusEl.textContent = 'STABLE (Maintenance)';
+                 dataStatusEl.classList.replace('text-orange-400', 'text-green-400');
+            }
+        }
+
+        function onPointerMove(event) {
+            if (!isDragging) return;
+
+            const currentPosition = getClientPosition(event);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            manualRotation = deltaX * 0.1;
+
+            // Apply rotation to the cosmic group
+            cosmicGroup.rotation.y += deltaX * 0.005;
+            cosmicGroup.rotation.x += deltaY * 0.005;
+
+            // Keep rotation manageable
+            cosmicGroup.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cosmicGroup.rotation.x));
+
+            previousMousePosition = currentPosition;
+            event.preventDefault();
+        }
+
+        // --- Utility Functions ---
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Start everything
+        window.onload = init;
+    </script>
+</body>
+</html>
+
+

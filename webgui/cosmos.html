@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2244 Resonance Field — Spirit Phalanx</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;}
+  canvas{display:block;width:100%;height:100%;}
+</style>
+</head>
+<body>
+<canvas id="universe"></canvas>
+<script type="module">
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.165/build/three.module.js";
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({canvas:document.getElementById("universe"),antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+
+// --- Lights ---
+const amb = new THREE.AmbientLight(0x444444);
+const point = new THREE.PointLight(0xffffff, 1.6);
+scene.add(amb, point);
+
+// --- Nucleus / Sun ---
+const sunGeo = new THREE.SphereGeometry(1, 64, 64);
+const sunMat = new THREE.MeshBasicMaterial({color:0xffaa33});
+const sun = new THREE.Mesh(sunGeo, sunMat);
+scene.add(sun);
+point.position.copy(sun.position);
+
+// --- Orbiting bodies (macro + micro) ---
+const nodes = [];
+const colors = [0x66ccff, 0xff6699, 0x99ff66, 0xcc99ff];
+for(let i=0;i<4;i++){
+  const g = new THREE.SphereGeometry(0.2,32,32);
+  const m = new THREE.MeshStandardMaterial({color:colors[i]});
+  const p = new THREE.Mesh(g,m);
+  p.userData = {r:2+i*0.7, φ:Math.random()*Math.PI*2, ω:0.5/(i+1)};
+  nodes.push(p); scene.add(p);
+}
+
+// --- Ions (microfield) ---
+const ionGroup = new THREE.Group(); scene.add(ionGroup);
+for(let i=0;i<60;i++){
+  const g = new THREE.SphereGeometry(0.05,8,8);
+  const m = new THREE.MeshBasicMaterial({color:0x00ffff});
+  const s = new THREE.Mesh(g,m);
+  s.userData={φ:Math.random()*Math.PI*2,θ:Math.random()*Math.PI, r:2.5+Math.random()};
+  ionGroup.add(s);
+}
+
+camera.position.z = 8;
+
+let t=0;
+function animate(){
+  requestAnimationFrame(animate);
+  t += 0.01;
+
+  // Planetary resonance
+  nodes.forEach((n,i)=>{
+    const d = n.userData;
+    d.φ += d.ω*0.01;
+    n.position.set(Math.cos(d.φ)*d.r, Math.sin(d.φ)*d.r*0.5, Math.sin(t*0.5+i));
+  });
+
+  // Ionic vibration (spirit phalanx bridge)
+  ionGroup.children.forEach((ion,j)=>{
+    const u = ion.userData;
+    u.φ += 0.02;
+    ion.position.set(
+      Math.sin(u.θ)*Math.cos(u.φ)*u.r,
+      Math.cos(u.θ)*u.r*0.4,
+      Math.sin(u.θ)*Math.sin(u.φ)*u.r
+    );
+    const e = Math.sin(t*2 + j*0.1);
+    ion.material.color.setHSL(0.55+0.1*e, 1.0, 0.5+0.3*e);
+  });
+
+  sun.material.color.offsetHSL(0,0,Math.sin(t)*0.02);
+
+  renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener("resize",()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>

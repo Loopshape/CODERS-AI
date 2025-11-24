@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Epoch: V11.0</title>
+    <!-- Load required libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #0d0014; /* Deep Violet/Black */
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        .info-overlay {
+            position: absolute;
+            top: 0;
+            right: 0; 
+            padding: 1.5rem;
+            color: #d1d5db; 
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: 0 0 5px #ff00ff; /* Magenta glow */
+            pointer-events: none; 
+            z-index: 10;
+            max-width: 380px;
+            background: rgba(13, 0, 20, 0.8);
+            border-bottom-left-radius: 15px;
+            border-bottom: 2px solid #ff00ff; /* Magenta border */
+            border-left: 1px solid #ff00ff;
+        }
+        .data-log {
+            height: 100px;
+            overflow-y: scroll;
+            margin-top: 10px;
+            padding: 5px;
+            border: 1px solid #d8b4fe;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            background: rgba(40, 0, 40, 0.6);
+            border-radius: 5px;
+            pointer-events: all;
+        }
+        #gsap-button {
+            pointer-events: all;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.7);
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        #gsap-button:hover {
+            box-shadow: 0 0 25px rgba(0, 255, 255, 1.0);
+            transform: scale(1.05);
+        }
+        .log-entry {
+            color: #a7f3d0;
+        }
+        .speed-indicator {
+            color: #f87171;
+            text-shadow: 0 0 5px #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Overlay for UI and Status (GSAP/jQuery Managed) -->
+        <div class="info-overlay">
+            <h1 id="main-title" class="text-2xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500">
+                COSMIC EPOCH V11.0
+            </h1>
+            <p class="text-sm text-gray-400">Precosmic Chaos to Solar System Order.</p>
+            
+            <!-- Button Section -->
+            <div class="mt-4 flex items-center justify-center">
+                <button id="gsap-button" 
+                    class="p-3 bg-cyan-600 text-white rounded-full font-bold transition duration-300 transform hover:bg-cyan-500">
+                    💥 Inject Cosmic Energy (GSAP)
+                </button>
+            </div>
+
+            <!-- CORE STATUS -->
+            <hr class="border-gray-700 my-3">
+            <div class="mt-4 text-sm font-bold text-teal-400">Epoch Status</div>
+            <div class="status-container text-xs mt-1">
+                <p>
+                    Current Orbital Speed: 
+                    <strong id="orbital-speed" class="text-yellow-300">1.0x</strong> 
+                    <span id="speed-status" class="text-green-400 ml-2">STABLE</span>
+                </p>
+                <div id="speed-bar" class="w-full bg-gray-700 h-2 mt-1 rounded-full overflow-hidden">
+                    <div id="speed-fill" class="h-2 bg-green-500 transition-all duration-300" style="width: 10%"></div>
+                </div>
+                <p class="mt-2">
+                    Precosmic Condensation: <strong id="condensation-level" class="text-yellow-300">0%</strong>
+                </p>
+            </div>
+            
+            <div class="mt-4 text-sm">
+                <p class="mt-3 text-sm font-bold text-fuchsia-400">Event Log:</p>
+                <div class="data-log" id="data-log">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Core Setup Variables ---
+        let scene, camera, renderer;
+        let cosmicGroup; // The main group holding all elements for user rotation
+        let precosmicParticles;
+        let planetGroups = [];
+        let manualRotation = new THREE.Vector2(0, 0);
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let orbitTime = 0;
+        let orbitSpeedMultiplier = 1.0;
+        let targetOrbitalSpeed = 1.0;
+        let condensationLevel = 0; // 0 to 100
+
+        // --- Configuration ---
+        const FIELD_SIZE = 1000;
+        
+        // Planet Data (Semi-realistic scale for visualization)
+        const PLANET_DATA = [
+            { name: "Mercury", distance: 4, radius: 0.2, color: 0xaa9a8b, period: 0.24, mesh: null },
+            { name: "Venus", distance: 7, radius: 0.3, color: 0xe68c4a, period: 0.62, mesh: null },
+            { name: "Earth", distance: 10, radius: 0.35, color: 0x4a86e6, period: 1.0, mesh: null },
+            { name: "Mars", distance: 15, radius: 0.3, color: 0xcc6633, period: 1.88, mesh: null },
+            { name: "Jupiter", distance: 25, radius: 1.0, color: 0xe6e6a3, period: 11.86, mesh: null },
+            { name: "Saturn", distance: 35, radius: 0.9, color: 0xe6e6a3, period: 29.46, mesh: null },
+            { name: "Uranus", distance: 45, radius: 0.6, color: 0x99ccff, period: 84.01, mesh: null },
+            { name: "Neptune", distance: 55, radius: 0.6, color: 0x0066cc, period: 164.8, mesh: null }
+        ];
+
+        // UI elements (jQuery cache)
+        const $dataLogEl = $('#data-log');
+        const $gsapButtonEl = $('#gsap-button');
+        const $orbitalSpeedEl = $('#orbital-speed');
+        const $speedFillEl = $('#speed-fill');
+        const $speedStatusEl = $('#speed-status');
+        const $condensationLevelEl = $('#condensation-level');
+
+        // --- Initialization and Setup ---
+
+        function init() {
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x0d0014, 100, 200);
+
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.z = 80;
+            camera.position.y = 15;
+            camera.rotation.x = -0.1;
+            
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            $('#container').append(renderer.domElement);
+            
+            // Group for user rotation (everything except the precosmic background)
+            cosmicGroup = new THREE.Group();
+            scene.add(cosmicGroup);
+
+            // 4. Lighting and Architecture Creation
+            setupLighting();
+            createCosmicArchitecture();
+            
+            // 5. Event Listeners and GSAP/jQuery Init
+            $(window).on('resize', onWindowResize);
+            setupInteractionHandlers(renderer.domElement);
+            setupGsapHandler();
+            
+            // Initial GSAP animation for the title
+            gsap.fromTo('#main-title', { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 1.5, ease: 'power2.out' });
+            
+            animate();
+            logEvent("Simulation initialized. Universe stable.", "text-cyan-400");
+        }
+
+        function logEvent(message, colorClass = "text-lime-400") {
+             const logEntry = $(`<div class="log-entry ${colorClass}"></div>`).html(`[${new Date().toLocaleTimeString()}] ${message}`);
+            $dataLogEl.prepend(logEntry);
+            $dataLogEl.children().slice(10).remove();
+        }
+
+        function setupLighting() {
+            // Sun Light (Central Source)
+            const sunLight = new THREE.PointLight(0xffaa00, 50, 200, 2); 
+            sunLight.position.set(0, 0, 0);
+            cosmicGroup.add(sunLight);
+            
+            // Ambient Light (Overall system visibility)
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5); 
+            scene.add(ambientLight);
+        }
+
+        function createCosmicArchitecture() {
+            // --- 1. Precosmic Chaos (Distant Particle Field) ---
+            const particleCount = 10000;
+            const precosmicGeometry = new THREE.BufferGeometry();
+            const precosmicVertices = [];
+            const colors = [];
+            const baseColor = new THREE.Color(0xff00ff); // Chaotic Magenta
+
+            for (let i = 0; i < particleCount; i++) {
+                // Distant, large field of chaos
+                const distance = 150 + Math.random() * 150;
+                precosmicVertices.push(
+                    (Math.random() - 0.5) * FIELD_SIZE, 
+                    (Math.random() - 0.5) * FIELD_SIZE, 
+                    (Math.random() - 0.5) * FIELD_SIZE
+                );
+                // Assign subtle color variation
+                const color = baseColor.clone().offsetHSL(Math.random() * 0.1 - 0.05, 0, 0);
+                colors.push(color.r, color.g, color.b);
+            }
+
+            precosmicGeometry.setAttribute('position', new THREE.Float32BufferAttribute(precosmicVertices, 3));
+            precosmicGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            precosmicParticles = new THREE.Points(
+                precosmicGeometry,
+                new THREE.PointsMaterial({
+                    size: 0.5,
+                    vertexColors: true,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    opacity: 0.8
+                })
+            );
+            scene.add(precosmicParticles);
+
+            // --- 2. Stellar Background (3D Stars) ---
+            for (let i = 0; i < 10; i++) {
+                const starRadius = 5 + Math.random() * 5;
+                const starGeometry = new THREE.SphereGeometry(starRadius, 16, 16);
+                const starColor = new THREE.Color(Math.random() > 0.5 ? 0xccffcc : 0xccccff); // Green/Blue stars
+                
+                const starLight = new THREE.PointLight(starColor, 10 + Math.random() * 20, 500, 2);
+                
+                // Place far outside the solar system
+                const position = new THREE.Vector3().setFromSphericalCoords(
+                    200 + Math.random() * 50, // Radius
+                    Math.acos(1 - 2 * Math.random()), // Polar angle
+                    Math.random() * 2 * Math.PI // Azimuthal angle
+                );
+                starLight.position.copy(position);
+                cosmicGroup.add(starLight);
+
+                const starMesh = new THREE.Mesh(starGeometry, new THREE.MeshBasicMaterial({ color: starColor.getHex() }));
+                starMesh.position.copy(position);
+                cosmicGroup.add(starMesh);
+            }
+            
+            // --- 3. Solar System (Central Object) ---
+            
+            // Sun Mesh (Visual only, light handles the illumination)
+            const sunMesh = new THREE.Mesh(
+                new THREE.SphereGeometry(2, 32, 32),
+                new THREE.MeshBasicMaterial({ color: 0xffa500 })
+            );
+            cosmicGroup.add(sunMesh);
+
+            // Create Planets and Orbits
+            PLANET_DATA.forEach(data => {
+                // Orbit Line (Wireframe)
+                const orbitGeometry = new THREE.RingGeometry(data.distance - 0.05, data.distance + 0.05, 128);
+                const orbitMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xffffff, 
+                    side: THREE.DoubleSide, 
+                    transparent: true, 
+                    opacity: 0.1 
+                });
+                const orbitMesh = new THREE.Mesh(orbitGeometry, orbitMaterial);
+                orbitMesh.rotation.x = Math.PI / 2; // Rotate flat onto the XZ plane
+                cosmicGroup.add(orbitMesh);
+                
+                // Planet Mesh
+                const planetGeometry = new THREE.SphereGeometry(data.radius, 16, 16);
+                const planetMaterial = new THREE.MeshPhongMaterial({ color: data.color });
+                data.mesh = new THREE.Mesh(planetGeometry, planetMaterial);
+
+                // Group the planet for easy position updates
+                const planetGroup = new THREE.Group();
+                planetGroup.add(data.mesh);
+                cosmicGroup.add(planetGroup);
+                
+                planetGroups.push({
+                    group: planetGroup, 
+                    period: data.period, 
+                    distance: data.distance,
+                    mesh: data.mesh
+                });
+            });
+        }
+
+        // --- Core Logic ---
+
+        function updatePlanets(deltaTime) {
+            orbitTime += deltaTime * orbitSpeedMultiplier;
+            
+            planetGroups.forEach(item => {
+                // Kepler's Third Law is simplified here: Angular speed = 1 / Period
+                const angle = (orbitTime / item.period) * Math.PI * 2; 
+
+                // Calculate position on the orbit (XZ plane)
+                const x = Math.cos(angle) * item.distance;
+                const z = Math.sin(angle) * item.distance;
+                
+                item.group.position.x = x;
+                item.group.position.z = z;
+
+                // Self-rotation for visual flair
+                item.mesh.rotation.y += deltaTime * orbitSpeedMultiplier * 1.5;
+            });
+            
+            // Smoothly move the current speed towards the target speed
+            orbitSpeedMultiplier += (targetOrbitalSpeed - orbitSpeedMultiplier) * 0.1 * deltaTime * 10;
+        }
+
+        function updatePrecosmicField() {
+            precosmicParticles.rotation.y += 0.0001; // Slow rotation
+            
+            // Simulating Condensation by scaling the particle size and density
+            if (condensationLevel > 0) {
+                const geometry = precosmicParticles.geometry;
+                const positions = geometry.attributes.position.array;
+                const factor = 1.0 - (condensationLevel / 100) * 0.5; // Up to 50% shrinkage
+
+                for(let i=0; i < positions.length; i+=3) {
+                    // Simple radial scaling
+                    positions[i] *= factor;
+                    positions[i+1] *= factor;
+                    positions[i+2] *= factor;
+                }
+                geometry.attributes.position.needsUpdate = true;
+                
+                // Decay condensation
+                condensationLevel = Math.max(0, condensationLevel - 0.5);
+            }
+        }
+        
+        function updateUI(deltaTime) {
+             const speedDisplay = Math.round(orbitSpeedMultiplier * 10) / 10;
+            $orbitalSpeedEl.text(`${speedDisplay}x`);
+            
+            // Update Speed Bar (normalized to a max visual of 5x)
+            const fillWidth = Math.min(100, (orbitSpeedMultiplier / 5.0) * 100);
+            $speedFillEl.css('width', `${fillWidth}%`);
+
+            // Update Status based on speed
+            if (orbitSpeedMultiplier > 1.5) {
+                $speedStatusEl.text('FLUX STATE').removeClass('text-green-400').addClass('speed-indicator');
+                $speedFillEl.removeClass('bg-green-500 bg-yellow-500').addClass('bg-red-500');
+            } else if (orbitSpeedMultiplier > 1.1) {
+                $speedStatusEl.text('ACCELERATING').removeClass('text-green-400 speed-indicator').addClass('text-yellow-500');
+                $speedFillEl.removeClass('bg-green-500 bg-red-500').addClass('bg-yellow-500');
+            } else {
+                $speedStatusEl.text('STABLE').removeClass('text-yellow-500 speed-indicator').addClass('text-green-400');
+                $speedFillEl.removeClass('bg-yellow-500 bg-red-500').addClass('bg-green-500');
+            }
+            
+            // Condensation Level
+            $condensationLevelEl.text(`${Math.round(condensationLevel)}%`);
+
+            // Apply interaction damping
+            if (!isDragging) {
+                manualRotation.multiplyScalar(0.95);
+            }
+            cosmicGroup.rotation.y += manualRotation.x;
+            cosmicGroup.rotation.x += manualRotation.y;
+        }
+        
+        // --- GSAP/jQuery UI Handler ---
+        function setupGsapHandler() {
+            $gsapButtonEl.on('click', function() {
+                if ($(this).prop('disabled')) return;
+                
+                $(this).prop('disabled', true);
+                targetOrbitalSpeed = 4.0; // Spike the speed
+                condensationLevel = 100; // Max condensation
+                logEvent("Cosmic Energy Burst detected! Orbital acceleration initiated.", "text-red-400");
+                
+                gsap.to(this, {
+                    scale: 1.1, 
+                    duration: 0.1, 
+                    yoyo: true, 
+                    repeat: 1, 
+                    ease: "power1.inOut",
+                    onComplete: () => {
+                        $(this).text('FLUX STATE...').removeClass('bg-cyan-600 hover:bg-cyan-500').addClass('bg-red-600');
+                        
+                        // GSAP to return speed and button to normal
+                        gsap.delayedCall(5, () => {
+                            targetOrbitalSpeed = 1.0;
+                            logEvent("Energy dissipated. System returning to nominal speed.", "text-cyan-400");
+                        });
+
+                        gsap.delayedCall(8, () => {
+                            $(this).prop('disabled', false);
+                            $(this).text('💥 Inject Cosmic Energy (GSAP)').removeClass('bg-red-600').addClass('bg-cyan-600 hover:bg-cyan-500');
+                        });
+                    }
+                });
+            });
+        }
+
+
+        // --- Interaction Handlers (Rotation) ---
+
+        function setupInteractionHandlers(element) {
+            $(element).on('mousedown touchstart', onPointerDown);
+            $(window).on('mouseup touchend', onPointerUp);
+            $(window).on('mousemove touchmove', onPointerMove);
+        }
+
+        function getClientPosition(event) {
+            if (event.originalEvent.touches && event.originalEvent.touches.length > 0) {
+                return { x: event.originalEvent.touches[0].clientX, y: event.originalEvent.touches[0].clientY };
+            }
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        function onPointerDown(event) {
+            isDragging = true;
+            previousMousePosition = getClientPosition(event);
+            event.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+        }
+
+        function onPointerMove(event) {
+            if (!isDragging) return;
+
+            const currentPosition = getClientPosition(event);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            const rotationFactor = 0.005;
+            
+            // Manual rotation for the entire architecture group
+            manualRotation.x = deltaX * rotationFactor;
+            manualRotation.y = deltaY * rotationFactor;
+
+            cosmicGroup.rotation.y += manualRotation.x;
+            cosmicGroup.rotation.x += manualRotation.y;
+
+            previousMousePosition = currentPosition;
+            event.preventDefault();
+        }
+
+
+        // --- Animation Loop ---
+        let lastTime = 0;
+        
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            const deltaTime = (time - lastTime) / 1000;
+            lastTime = time;
+            
+            updatePlanets(deltaTime);
+            updatePrecosmicField();
+            updateUI(deltaTime);
+
+            renderer.render(scene, camera);
+        }
+        
+        // --- Utility Functions ---
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Start everything using jQuery ready function for robustness
+        $(document).ready(init);
+    </script>
+</body>
+</html>
+
+

@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quantum Token Stream v4.0</title>
+    <!-- Load Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            overflow: hidden;
+            height: 100%;
+            background-color: #000000;
+        }
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        .info-overlay {
+            position: absolute;
+            top: 0;
+            right: 0; /* Align right for clear view of atoms */
+            padding: 1.5rem;
+            color: #d1d5db; /* Light gray */
+            font-family: 'Share Tech Mono', monospace;
+            text-shadow: 0 0 5px #fef08a;
+            pointer-events: none; 
+            z-index: 10;
+            max-width: 300px;
+            background: rgba(0, 0, 0, 0.4);
+            border-bottom-left-radius: 10px;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .token-log {
+            height: 100px;
+            overflow-y: scroll;
+            margin-top: 10px;
+            padding: 5px;
+            border: 1px solid #4ade80;
+            font-size: 0.75rem;
+            line-height: 1.2;
+            background: rgba(1, 1, 15, 0.6);
+            border-radius: 5px;
+            pointer-events: all; /* Allow scrolling */
+        }
+        .token {
+            color: #34d399; /* Green token */
+        }
+        .atom-status {
+            font-size: 0.8rem;
+            margin-top: 5px;
+            color: #fcd34d;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <!-- Overlay for Title and Instructions -->
+        <div class="info-overlay">
+            <h1 class="text-2xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-cyan-500">
+                OLLAMA QUANTUM FIELD
+            </h1>
+            <p class="text-sm text-gray-400">Atoms = LLMs. Collisions = Fusion.</p>
+            
+            <div class="mt-4 text-sm">
+                <p>Orchestrator Status: 
+                    <span id="connection-dot" class="status-dot bg-yellow-400"></span> 
+                    <strong id="connection-status">Initializing...</strong>
+                </p>
+                <div class="atom-status" id="atom-status-container">
+                    <!-- Atom energy stats inserted here -->
+                </div>
+                <p class="mt-3 text-sm font-bold text-green-400">Real-Time Token Stream:</p>
+                <div class="token-log" id="token-log">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global Three.js variables
+        let scene, camera, renderer;
+        let physicsGroup; // Group for all moving objects
+        let ionField; // Particle system for ions/tokens
+        let atoms = []; // Array to hold atom objects
+        let haloflares = []; // Array to hold transient flare meshes
+
+        // --- Configuration ---
+        const FIELD_SIZE = 40;
+        const ATOM_COUNT = 8;
+        const ATOM_RADIUS = 2;
+        const ION_COUNT = 15000;
+        const ROTATION_SPEED = 0.001;
+
+        // Dynamic System Variables
+        let ionSpeedFactor = 1.0;
+        const MAX_ION_SPEED = 3.0;
+        const BASE_ION_SPEED = 0.5;
+        const ION_DECAY = 0.99; // Speed decays over time
+
+        // Interaction
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let manualRotation = 0; 
+
+        // UI elements
+        const connectionStatusEl = document.getElementById('connection-status');
+        const connectionDotEl = document.getElementById('connection-dot');
+        const tokenLogEl = document.getElementById('token-log');
+        const atomStatusContainer = document.getElementById('atom-status-container');
+
+        // --- Atom Definition ---
+        const ATOM_COLORS = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0xffa500, 0x800080];
+        
+        class Atom {
+            constructor(index) {
+                this.id = index;
+                this.color = ATOM_COLORS[index % ATOM_COLORS.length];
+                this.mass = 1.0;
+                this.energy = 50; // A base energy level
+                this.radius = ATOM_RADIUS;
+                this.state = 'Normal';
+                
+                const geometry = new THREE.SphereGeometry(this.radius, 16, 16);
+                const material = new THREE.MeshBasicMaterial({ 
+                    color: this.color, 
+                    wireframe: true, 
+                    transparent: true, 
+                    opacity: 0.7 
+                });
+                this.mesh = new THREE.Mesh(geometry, material);
+                
+                this.mesh.position.set(
+                    (Math.random() - 0.5) * FIELD_SIZE * 0.8,
+                    (Math.random() - 0.5) * FIELD_SIZE * 0.8,
+                    (Math.random() - 0.5) * FIELD_SIZE * 0.8
+                );
+                
+                this.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2
+                );
+                
+                physicsGroup.add(this.mesh);
+            }
+
+            // Applies a token command to modify physics
+            applyToken(command, value) {
+                switch(command) {
+                    case 'accelerate':
+                        this.velocity.multiplyScalar(1 + value);
+                        this.energy += 5;
+                        break;
+                    case 'decelerate':
+                        this.velocity.multiplyScalar(1 - value);
+                        this.energy -= 2;
+                        break;
+                    case 'recharge':
+                        this.energy += value * 10;
+                        break;
+                    case 'stabilize':
+                        this.velocity.normalize().multiplyScalar(0.1);
+                        break;
+                }
+                this.energy = Math.max(0, Math.min(100, this.energy)); // Clamp energy
+            }
+        }
+
+
+        // --- Mock LLM Token Orchestrator ---
+        class TokenOrchestrator {
+            constructor() {
+                this.status = 'Disconnected';
+                this.tokenInterval = null;
+                this.connect();
+            }
+
+            // Generates a targeted, verbosed token
+            generateToken() {
+                const targetAtom = Math.floor(Math.random() * ATOM_COUNT);
+                const commands = [
+                    { cmd: 'accelerate', val: 0.05, verb: 'Pushing' },
+                    { cmd: 'decelerate', val: 0.02, verb: 'Damping' },
+                    { cmd: 'recharge', val: 2, verb: 'Injecting' },
+                    { cmd: 'stabilize', val: 0, verb: 'Fixing' },
+                ];
+                const command = commands[Math.floor(Math.random() * commands.length)];
+                
+                return {
+                    target: targetAtom,
+                    command: command.cmd,
+                    value: command.val,
+                    verbose: `${command.verb} computational energy into Atom-${targetAtom}.`
+                };
+            }
+
+            connect() {
+                this.setStatus('Connecting to Ollama');
+                connectionDotEl.classList.replace('bg-red-500', 'bg-yellow-400');
+                
+                setTimeout(() => {
+                    this.status = 'Connected';
+                    this.setStatus('Connected (Real-time Tokenstream)');
+                    connectionDotEl.classList.replace('bg-yellow-400', 'bg-green-500');
+                    this.startTokenStream();
+                }, 3000); 
+            }
+
+            startTokenStream() {
+                if (this.tokenInterval) clearInterval(this.tokenInterval);
+
+                this.tokenInterval = setInterval(() => {
+                    if (this.status === 'Connected' && !isDragging) {
+                        const token = this.generateToken();
+                        atoms[token.target].applyToken(token.command, token.value);
+                        this.logToken(token);
+                    }
+                }, 1000); // Stream a new token command every 1 second
+            }
+            
+            logToken(token) {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'token';
+                logEntry.textContent = `[T${token.target}] ${token.verbose}`;
+                
+                tokenLogEl.prepend(logEntry);
+                if (tokenLogEl.children.length > 10) {
+                    tokenLogEl.removeChild(tokenLogEl.lastChild);
+                }
+            }
+
+            setStatus(message) {
+                connectionStatusEl.textContent = message;
+                this.status = message;
+            }
+        }
+        
+        let orchestrator;
+
+        // --- Initialization ---
+
+        function init() {
+            const container = document.getElementById('container');
+
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 1, FIELD_SIZE * 2);
+
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = FIELD_SIZE * 1.5;
+            
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            
+            // 4. Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 5); 
+            scene.add(ambientLight);
+            
+            // Group for all moving physics objects
+            physicsGroup = new THREE.Group();
+            scene.add(physicsGroup);
+
+            // 5. Build Components
+            createTokenOrchestratorCore();
+            createIonField();
+            createOllamaAtoms();
+            
+            // 6. Start Mock Orchestrator
+            orchestrator = new TokenOrchestrator();
+
+            // 7. Event Listeners
+            window.addEventListener('resize', onWindowResize, false);
+            setupInteractionHandlers(renderer.domElement);
+            
+            animate();
+        }
+
+        function createTokenOrchestratorCore() {
+            // Placeholder: The core is now the central point of the ion field
+        }
+
+        function createOllamaAtoms() {
+            for (let i = 0; i < ATOM_COUNT; i++) {
+                atoms.push(new Atom(i));
+            }
+        }
+
+        function createIonField() {
+            const ionGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(ION_COUNT * 3);
+            
+            for (let i = 0; i < ION_COUNT; i++) {
+                // Initial random positions within the field
+                positions[i * 3 + 0] = (Math.random() - 0.5) * FIELD_SIZE;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * FIELD_SIZE;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * FIELD_SIZE;
+            }
+            
+            ionGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const ionMaterial = new THREE.PointsMaterial({ 
+                color: 0x4ddbff, // Cyan ions
+                size: 0.1, 
+                sizeAttenuation: true,
+                transparent: true,
+                blending: THREE.AdditiveBlending 
+            });
+            ionField = new THREE.Points(ionGeometry, ionMaterial);
+            physicsGroup.add(ionField);
+        }
+
+        // --- Physics & Collision ---
+
+        function updateAtomPhysics(deltaTime) {
+            for (let i = 0; i < ATOM_COUNT; i++) {
+                const atomA = atoms[i];
+                atomA.energy = Math.max(0, atomA.energy - 0.01); // Natural energy decay
+
+                // 1. Update position based on velocity
+                atomA.mesh.position.add(atomA.velocity.clone().multiplyScalar(deltaTime * 10));
+
+                // 2. Boundary collision (rebound off field walls)
+                const pos = atomA.mesh.position;
+                if (Math.abs(pos.x) > FIELD_SIZE / 2) { atomA.velocity.x *= -1; pos.x *= 0.99; }
+                if (Math.abs(pos.y) > FIELD_SIZE / 2) { atomA.velocity.y *= -1; pos.y *= 0.99; }
+                if (Math.abs(pos.z) > FIELD_SIZE / 2) { atomA.velocity.z *= -1; pos.z *= 0.99; }
+
+                // 3. Atom-to-Atom Collision Detection
+                for (let j = i + 1; j < ATOM_COUNT; j++) {
+                    const atomB = atoms[j];
+                    const distance = atomA.mesh.position.distanceTo(atomB.mesh.position);
+                    
+                    if (distance < atomA.radius + atomB.radius) {
+                        // Collision Detected: Perform Fusion Event!
+                        
+                        // Create bright Haloflare effect
+                        createHaloflare(atomA.mesh.position, 
+                            (atomA.color & 0x00ffff) | (atomB.color & 0xff0000) // Mix colors
+                        );
+
+                        // Energy Surge (Spike Ion Speed)
+                        ionSpeedFactor = MAX_ION_SPEED; 
+
+                        // Simple Momentum Transfer (Elastic Collision)
+                        const normal = atomA.mesh.position.clone().sub(atomB.mesh.position).normalize();
+                        const velocityA_proj = atomA.velocity.dot(normal);
+                        const velocityB_proj = atomB.velocity.dot(normal);
+
+                        // Exchange velocity components along the normal vector
+                        atomA.velocity.sub(normal.clone().multiplyScalar(velocityA_proj - velocityB_proj));
+                        atomB.velocity.add(normal.clone().multiplyScalar(velocityA_proj - velocityB_proj));
+                        
+                        // Separate the atoms to prevent sticky collisions
+                        const penetration = (atomA.radius + atomB.radius) - distance;
+                        atomA.mesh.position.add(normal.clone().multiplyScalar(penetration * 0.5));
+                        atomB.mesh.position.sub(normal.clone().multiplyScalar(penetration * 0.5));
+
+                        // Fusion Cost/Gain
+                        atomA.energy += 10;
+                        atomB.energy += 10;
+                    }
+                }
+            }
+        }
+
+        function createHaloflare(position, color) {
+            const geometry = new THREE.SphereGeometry(1, 32, 32);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: color, 
+                transparent: true, 
+                opacity: 1.0, 
+                blending: THREE.AdditiveBlending 
+            });
+            const flare = new THREE.Mesh(geometry, material);
+            flare.position.copy(position);
+            flare.scaleFactor = 1.0;
+            flare.lifespan = 0;
+            
+            physicsGroup.add(flare);
+            haloflares.push(flare);
+        }
+
+        function updateHaloflares() {
+            const activeFlares = [];
+            for (const flare of haloflares) {
+                flare.lifespan += 0.05;
+                flare.scaleFactor += 0.5; // Rapid expansion
+                flare.material.opacity = Math.max(0, 1.0 - flare.lifespan); // Rapid fade
+                
+                flare.scale.set(flare.scaleFactor, flare.scaleFactor, flare.scaleFactor);
+                
+                if (flare.material.opacity > 0) {
+                    activeFlares.push(flare);
+                } else {
+                    physicsGroup.remove(flare);
+                }
+            }
+            haloflares = activeFlares;
+        }
+
+        function updateIonFlow(deltaTime) {
+            // Ion speed decays unless a fusion event or LLM command maintains it
+            ionSpeedFactor = Math.max(BASE_ION_SPEED, ionSpeedFactor * ION_DECAY);
+
+            const positions = ionField.geometry.attributes.position.array;
+            const center = new THREE.Vector3(0, 0, 0);
+
+            for (let i = 0; i < ION_COUNT; i++) {
+                const i3 = i * 3;
+                let x = positions[i3];
+                let y = positions[i3 + 1];
+                let z = positions[i3 + 2];
+
+                const currentPos = new THREE.Vector3(x, y, z);
+                
+                // Direction of flow: Random walk with slight pull towards the center
+                const direction = new THREE.Vector3(
+                    (Math.random() - 0.5), 
+                    (Math.random() - 0.5), 
+                    (Math.random() - 0.5)
+                ).normalize().multiplyScalar(ionSpeedFactor * deltaTime);
+
+                // Add small gravity/pull toward the center
+                const pull = center.clone().sub(currentPos).normalize().multiplyScalar(0.01 * ionSpeedFactor * deltaTime);
+                direction.add(pull);
+
+                x += direction.x;
+                y += direction.y;
+                z += direction.z;
+
+                // Boundary wrapping: Teleport particles that leave the field
+                if (Math.abs(x) > FIELD_SIZE / 2 || Math.abs(y) > FIELD_SIZE / 2 || Math.abs(z) > FIELD_SIZE / 2) {
+                    x = (Math.random() - 0.5) * FIELD_SIZE * 0.8;
+                    y = (Math.random() - 0.5) * FIELD_SIZE * 0.8;
+                    z = (Math.random() - 0.5) * FIELD_SIZE * 0.8;
+                }
+
+                // Update position
+                positions[i3] = x;
+                positions[i3 + 1] = y;
+                positions[i3 + 2] = z;
+            }
+
+            ionField.geometry.attributes.position.needsUpdate = true;
+            ionField.material.size = 0.1 + (ionSpeedFactor * 0.05); // Scale ion size with speed
+        }
+        
+        function updateAtomUI() {
+            let html = atoms.map(atom => {
+                const color = `#${atom.color.toString(16).padStart(6, '0')}`;
+                return `
+                    <p style="color:${color};">
+                        Atom-${atom.id} (E:${Math.round(atom.energy)}) 
+                        ${atom.state === 'Normal' ? '✅' : '🚨'}
+                    </p>
+                `;
+            }).join('');
+            atomStatusContainer.innerHTML = html;
+        }
+
+
+        // --- Animation Loop ---
+        let lastTime = 0;
+        
+        function animate(time) {
+            requestAnimationFrame(animate);
+
+            const deltaTime = (time - lastTime) / 1000; // Time in seconds
+            lastTime = time;
+
+            // Apply global rotation to the physics group
+            physicsGroup.rotation.y += ROTATION_SPEED + (manualRotation * 0.001);
+            manualRotation *= 0.99; 
+
+            // Physics Updates
+            updateAtomPhysics(deltaTime);
+            updateIonFlow(deltaTime);
+            updateHaloflares();
+            
+            // UI Update
+            updateAtomUI();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Interaction Handlers (Rotation via Drag/Swipe) ---
+
+        function setupInteractionHandlers(element) {
+            element.addEventListener('mousedown', onPointerDown, false);
+            window.addEventListener('mouseup', onPointerUp, false);
+            window.addEventListener('mousemove', onPointerMove, false);
+
+            element.addEventListener('touchstart', onPointerDown, false);
+            window.addEventListener('touchend', onPointerUp, false);
+            element.addEventListener('touchmove', onPointerMove, { passive: false });
+        }
+
+        function getClientPosition(event) {
+            if (event.touches && event.touches.length > 0) {
+                return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+            }
+            return { x: event.clientX, y: event.clientY };
+        }
+
+        function onPointerDown(event) {
+            isDragging = true;
+            previousMousePosition = getClientPosition(event);
+            event.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+        }
+
+        function onPointerMove(event) {
+            if (!isDragging) return;
+
+            const currentPosition = getClientPosition(event);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            manualRotation = deltaX * 0.1;
+
+            physicsGroup.rotation.y += deltaX * 0.005;
+            physicsGroup.rotation.x += deltaY * 0.005;
+
+            previousMousePosition = currentPosition;
+            event.preventDefault();
+        }
+
+        // --- Utility Functions ---
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Start everything
+        window.onload = init;
+    </script>
+</body>
+</html>
+
+

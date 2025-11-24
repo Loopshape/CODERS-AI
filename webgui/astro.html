@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AstroView :: Real-Time Constellation Viewer v1.0</title>
+    <!-- Tailwind CSS for surrounding UI/Aesthetics -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #0d1117; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Space Mono', monospace;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            background: #000000;
+        }
+        #controls-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #4f46e5;
+            box-shadow: 0 0 10px rgba(79, 70, 229, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="absolute inset-0 flex flex-col items-center justify-center p-4">
+        <canvas id="sky-canvas"></canvas>
+        
+        <div id="controls-box" class="absolute top-4 right-4 p-3 rounded-lg text-xs text-indigo-300 select-none">
+            <p class="text-base font-bold text-center mb-1">CELESTIAL SPHERE</p>
+            <p><strong>Drag/Swipe:</strong> Look Around (Pan)</p>
+            <p><strong>Auto-Rotation:</strong> Eastward Drift</p>
+        </div>
+        
+        <div id="info-box" class="absolute bottom-4 left-4 p-3 rounded-lg text-xs text-gray-200 bg-gray-900 border border-gray-700 font-mono">
+            <p>Viewing Direction (RA/Dec):</p>
+            <p><span class="text-yellow-400">RA:</span> <strong id="ra-display">0.00°</strong></p>
+            <p><span class="text-cyan-400">Dec:</span> <strong id="dec-display">0.00°</strong></p>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("sky-canvas");
+        const ctx = canvas.getContext("2d");
+        const raDisplay = document.getElementById('ra-display');
+        const decDisplay = document.getElementById('dec-display');
+
+        // --- Configuration ---
+        const Z_SCALE = 2; // Simulated Sphere Radius
+        const FOV = 2.0;   // Field of View factor (controls perspective)
+        const DRAG_SENSITIVITY = 0.005;
+
+        // Current view angles (in radians)
+        let viewerRA = 0; // Right Ascension (Horizontal look)
+        let viewerDec = 0; // Declination (Vertical look)
+
+        // --- Data Model: Simplified Constellation Data ---
+        // Coordinates are (Right Ascension, Declination) in degrees
+        const CONSTELLATION_DATA = {
+            stars: [
+                // Ursa Major (Big Dipper - High Declination)
+                { ra: 165, dec: 62, name: 'Dubhe', size: 5, color: '#FFFFFF' }, 
+                { ra: 180, dec: 60, name: 'Merak', size: 4, color: '#EEDDFF' }, 
+                { ra: 185, dec: 58, name: 'Phecda', size: 3, color: '#FFFFFF' }, 
+                { ra: 210, dec: 50, name: 'Alioth', size: 5, color: '#FFFFFF' }, 
+                { ra: 230, dec: 40, name: 'Alkaid', size: 3, color: '#EEDDFF' }, 
+                // Orion (Equatorial)
+                { ra: 70, dec: 8, name: 'Betelgeuse', size: 6, color: '#FF9999' }, // Red Giant
+                { ra: 85, dec: -10, name: 'Rigel', size: 6, color: '#AAEEFF' },   // Blue Giant
+                { ra: 80, dec: 0, name: 'Alnilam', size: 5, color: '#FFFFFF' },
+                { ra: 80, dec: -1, name: 'Alnitak', size: 5, color: '#FFFFFF' },
+                { ra: 80, dec: 1, name: 'Mintaka', size: 5, color: '#FFFFFF' },
+            ],
+            // Lines define connections between star indices
+            lines: [
+                // Ursa Major (0-4, 5-6, etc.) - indices based on definition above
+                [0, 1], [1, 2], [2, 3], [3, 4], // Dipper handle and cup
+                // Orion (Major connections)
+                [5, 6], [5, 8], [6, 8], // Body outline
+                [7, 8], [8, 9] // The belt stars
+            ]
+        };
+
+        // --- Math Utilities ---
+
+        function toRadians(degrees) {
+            return degrees * Math.PI / 180;
+        }
+
+        function toDegrees(radians) {
+            return radians * 180 / Math.PI;
+        }
+
+        function normalizeAngle(angle) {
+            return (angle % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+        }
+
+        /**
+         * Converts celestial (RA, Dec) coordinates to 3D Cartesian (x, y, z) on a unit sphere.
+         * The sphere is centered at (0, 0, 0).
+         * @param {number} ra - Right Ascension in radians (longitude)
+         * @param {number} dec - Declination in radians (latitude)
+         * @returns {{x: number, y: number, z: number}}
+         */
+        function raDecToCartesian(ra, dec) {
+            const cosDec = Math.cos(dec);
+            return {
+                x: Z_SCALE * cosDec * Math.cos(ra),
+                y: Z_SCALE * Math.sin(dec),
+                z: Z_SCALE * cosDec * Math.sin(ra)
+            };
+        }
+
+        /**
+         * Rotates a point (x, y, z) by viewer's RA and Dec angles.
+         * This transforms the absolute star coordinates into the viewer's relative frame.
+         * @param {{x: number, y: number, z: number}} p - Cartesian point
+         * @returns {{x: number, y: number, z: number}} - Rotated point
+         */
+        function rotateCartesian(p) {
+            const pitch = viewerDec; // Rotation around X axis
+            const yaw = viewerRA;    // Rotation around Y axis
+
+            let x = p.x;
+            let y = p.y;
+            let z = p.z;
+
+            // 1. Rotation around Y (Yaw) - Horizontal
+            let cosY = Math.cos(yaw);
+            let sinY = Math.sin(yaw);
+            let tempX = x * cosY + z * sinY;
+            let tempZ = z * cosY - x * sinY;
+            x = tempX;
+            z = tempZ;
+
+            // 2. Rotation around X (Pitch) - Vertical
+            let cosP = Math.cos(pitch);
+            let sinP = Math.sin(pitch);
+            let tempY = y * cosP - z * sinP;
+            tempZ = z * cosP + y * sinP;
+            y = tempY;
+            z = tempZ;
+
+            return { x, y, z };
+        }
+
+        /**
+         * Projects the rotated 3D point onto the 2D canvas using perspective.
+         * @param {{x: number, y: number, z: number}} rotatedP - Rotated Cartesian point
+         * @returns {{x: number, y: number, size: number}} - Projected 2D point
+         */
+        function projectToCanvas(rotatedP) {
+            // Check if star is behind the camera (z must be positive after rotation)
+            if (rotatedP.z <= 0) return null; 
+            
+            // Perspective projection
+            const scale = FOV / rotatedP.z;
+            const x2D = rotatedP.x * scale + canvas.width / 2;
+            const y2D = rotatedP.y * scale + canvas.height / 2;
+            
+            // Size also scales with distance (closer = bigger)
+            const sizeScale = 1 / rotatedP.z;
+
+            return { x: x2D, y: y2D, sizeScale: sizeScale };
+        }
+
+
+        // --- Drawing Functions ---
+
+        function drawStar(star, projected) {
+            if (!projected) return;
+
+            const size = star.size * projected.sizeScale * 0.5;
+            
+            ctx.beginPath();
+            ctx.arc(projected.x, projected.y, size, 0, Math.PI * 2);
+            
+            // Add soft glow for a celestial look
+            ctx.shadowBlur = size * 3;
+            ctx.shadowColor = star.color;
+            
+            ctx.fillStyle = star.color;
+            ctx.fill();
+            
+            ctx.shadowBlur = 0; // Reset shadow for next object
+
+            // Optionally draw star name if large enough and centered
+            // if (size > 2) {
+            //     ctx.fillStyle = star.color;
+            //     ctx.font = '10px Space Mono';
+            //     ctx.textAlign = 'center';
+            //     ctx.fillText(star.name, projected.x, projected.y - 10);
+            // }
+        }
+
+        function drawConstellationLines(projectedStars) {
+            ctx.strokeStyle = '#374151'; // Slate gray lines
+            ctx.lineWidth = 1.5;
+            
+            CONSTELLATION_DATA.lines.forEach(([i, j]) => {
+                const start = projectedStars[i];
+                const end = projectedStars[j];
+
+                // Only draw line if both stars are in view (not null)
+                if (start && end) {
+                    ctx.beginPath();
+                    ctx.moveTo(start.x, start.y);
+                    ctx.lineTo(end.x, end.y);
+                    ctx.stroke();
+                }
+            });
+        }
+
+        function draw() {
+            // 1. Clear Canvas (fade effect for smoothness)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 2. Automatic Rotation (Simulate Earth's rotation/time passing)
+            viewerRA += 0.0005; // Gentle eastward drift
+
+            // 3. Project and Draw
+            const projectedStars = [];
+            
+            // Store the projection for lines
+            CONSTELLATION_DATA.stars.forEach((star, index) => {
+                const raRad = toRadians(star.ra);
+                const decRad = toRadians(star.dec);
+                
+                // 3D Cartesian
+                let p = raDecToCartesian(raRad, decRad);
+                
+                // Rotation
+                let rotatedP = rotateCartesian(p);
+
+                // 2D Projection
+                let projected = projectToCanvas(rotatedP);
+
+                projectedStars[index] = projected;
+            });
+            
+            // Draw lines first so stars sit on top
+            drawConstellationLines(projectedStars);
+
+            // Draw stars second
+            projectedStars.forEach((projected, index) => {
+                drawStar(CONSTELLATION_DATA.stars[index], projected);
+            });
+            
+            // Update Info Panel
+            raDisplay.textContent = `${(toDegrees(normalizeAngle(viewerRA))).toFixed(2)}°`;
+            decDisplay.textContent = `${toDegrees(viewerDec).toFixed(2)}°`;
+
+            requestAnimationFrame(draw);
+        }
+        
+        // --- Initialization and Resize ---
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Ensure the canvas maintains aspect ratio while filling screen
+            const size = Math.min(window.innerWidth, window.innerHeight) * 0.95;
+            canvas.width = size;
+            canvas.height = size;
+        }
+        window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+
+        // --- Movement and Controls (Touch/Click Drag) ---
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        
+        function toVector2(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX !== undefined ? e.clientX : e.touches?.[0]?.clientX;
+            const clientY = e.clientY !== undefined ? e.clientY : e.touches?.[0]?.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top }; 
+        }
+
+        function onPointerDown(e) {
+            isDragging = true;
+            previousMousePosition = toVector2(e);
+            e.preventDefault();
+        }
+
+        function onPointerMove(e) {
+            if (!isDragging) return;
+
+            const currentPosition = toVector2(e);
+            const deltaX = currentPosition.x - previousMousePosition.x;
+            const deltaY = currentPosition.y - previousMousePosition.y;
+            
+            // Update Viewer RA/Dec angles
+            // Horizontal movement (X) affects viewerRA (Yaw)
+            viewerRA -= deltaX * DRAG_SENSITIVITY; 
+            // Vertical movement (Y) affects viewerDec (Pitch)
+            viewerDec += deltaY * DRAG_SENSITIVITY; 
+
+            // Clamp vertical rotation (Declination) to prevent flipping the sky
+            viewerDec = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, viewerDec));
+            
+            previousMousePosition = currentPosition;
+            e.preventDefault();
+        }
+
+        function onPointerUp() {
+            isDragging = false;
+        }
+
+        // Attach integrated pointer event handlers
+        canvas.addEventListener('mousedown', onPointerDown, false);
+        document.addEventListener('mouseup', onPointerUp, false);
+        document.addEventListener('mousemove', onPointerMove, false);
+
+        canvas.addEventListener('touchstart', onPointerDown, false);
+        document.addEventListener('touchend', onPointerUp, false);
+        document.addEventListener('touchmove', onPointerMove, { passive: false }); 
+
+        // Start the simulation
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>
+

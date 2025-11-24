@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Astronomica-Radix :: 12 Houses Simulation v1.0</title>
+    <!-- Tailwind CSS for surrounding UI/Aesthetics -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #0d1117; /* Dark space background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Merriweather', serif;
+        }
+        canvas {
+            display: block;
+            border-radius: 50%; /* Make the main chart area circular */
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.1);
+            max-width: 90vmin;
+            max-height: 90vmin;
+            background: #000000;
+        }
+        #controls-box {
+            background-color: rgba(0, 0, 0, 0.8);
+            border: 2px solid #5a5a5a;
+            box-shadow: 0 0 15px rgba(255, 255, 100, 0.3);
+            transition: all 0.2s;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex flex-col items-center justify-center p-4">
+        <h1 class="text-2xl font-bold text-yellow-300 mb-4 tracking-wider">
+            Radix Chart Simulation
+        </h1>
+        
+        <canvas id="radix-chart" width="700" height="700"></canvas>
+        
+        <div id="controls-box" class="mt-8 p-3 rounded-lg text-sm text-gray-200 flex space-x-4 items-center">
+            <button id="toggle-sim" class="px-4 py-2 rounded-full bg-cyan-600 hover:bg-cyan-700 transition duration-150 shadow-lg text-white font-semibold">
+                Pause / Play
+            </button>
+            <span class="font-mono text-xs">Sim Status: <strong id="status-display" class="text-lime-400">Playing</strong></span>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("radix-chart");
+        const ctx = canvas.getContext("2d");
+        const toggleButton = document.getElementById("toggle-sim");
+        const statusDisplay = document.getElementById("status-display");
+
+        // --- Configuration ---
+        const CENTER_X = canvas.width / 2;
+        const CENTER_Y = canvas.height / 2;
+        const CHART_RADIUS = CENTER_X * 0.95;
+        const ZODIAC_RING_RADIUS = CHART_RADIUS * 0.85;
+        const ORBIT_SPACING = (ZODIAC_RING_RADIUS * 0.7) / 9; // Space for 9 orbits
+
+        let timeOffset = 0; // Tracks the passage of time/degrees
+        let isPlaying = true;
+        let lastTimestamp = 0;
+        
+        // --- Data Model: Planets (Astrological focus, using simplified orbital data) ---
+        // Orbital radii are scaled for visualization (not to actual AU ratios)
+        // Periods are in Earth Years (approximate sidereal period)
+        const PLANETS = [
+            // { name: 'Sun', symbol: '☉', color: '#FFD700', radiusFactor: 0.0, period: 0.01 }, // Fixed Center
+            { name: 'Mercury', symbol: '☿', color: '#B5A695', radiusFactor: 0.2, period: 0.241 },
+            { name: 'Venus', symbol: '♀', color: '#FFC0CB', radiusFactor: 0.3, period: 0.615 },
+            { name: 'Earth', symbol: '🜨', color: '#00AADD', radiusFactor: 0.4, period: 1.000 },
+            { name: 'Mars', symbol: '♂', color: '#DD4444', radiusFactor: 0.5, period: 1.881 },
+            { name: 'Jupiter', symbol: '♃', color: '#DD8833', radiusFactor: 0.6, period: 11.86 },
+            { name: 'Saturn', symbol: '♄', color: '#AAAA33', radiusFactor: 0.7, period: 29.46 },
+            { name: 'Uranus', symbol: '⛢', color: '#88DDEE', radiusFactor: 0.8, period: 84.01 },
+            { name: 'Neptune', symbol: '♆', color: '#3366FF', radiusFactor: 0.9, period: 164.8 },
+            { name: 'Pluto', symbol: '♇', color: '#999999', radiusFactor: 1.0, period: 248.0 } // Pluto included for completeness
+        ];
+
+        // --- Data Model: 12 Houses/Zodiac Signs ---
+        const ZODIAC_SIGNS = [
+            { name: 'Aries', symbol: '♈', color: '#E53E3E' },
+            { name: 'Taurus', symbol: '♉', color: '#38A169' },
+            { name: 'Gemini', symbol: '♊', color: '#F6E05E' },
+            { name: 'Cancer', symbol: '♋', color: '#A0AEC0' },
+            { name: 'Leo', symbol: '♌', color: '#F6AD55' },
+            { name: 'Virgo', symbol: '♍', color: '#48BB78' },
+            { name: 'Libra', symbol: '♎', color: '#63B3ED' },
+            { name: 'Scorpio', symbol: '♏', color: '#805AD5' },
+            { name: 'Sagittarius', symbol: '♐', color: '#E39955' },
+            { name: 'Capricorn', symbol: '♑', color: '#333333' },
+            { name: 'Aquarius', symbol: '♒', color: '#00B5D8' },
+            { name: 'Pisces', symbol: '♓', color: '#D53F8C' }
+        ];
+
+        // --- Drawing Utilities ---
+        
+        function toRadians(degrees) {
+            return degrees * Math.PI / 180;
+        }
+
+        function drawCircle(x, y, radius, color, fill = true, strokeWidth = 2) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            if (fill) {
+                ctx.fillStyle = color;
+                ctx.fill();
+            } else {
+                ctx.strokeStyle = color;
+                ctx.lineWidth = strokeWidth;
+                ctx.stroke();
+            }
+        }
+
+        function drawSun() {
+            // Draw the central Sun symbol
+            const color = '#FFD700';
+            const radius = ORBIT_SPACING * 0.7;
+            
+            // Draw soft yellow glow
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = color;
+            drawCircle(CENTER_X, CENTER_Y, radius, color);
+            
+            // Draw central dot and ray for the symbol '☉'
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 1;
+            drawCircle(CENTER_X, CENTER_Y, radius * 0.3, '#000000');
+            drawCircle(CENTER_X, CENTER_Y, radius * 0.1, color);
+
+            ctx.font = '24px Arial';
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('☉', CENTER_X, CENTER_Y + 2); // Sun Symbol
+        }
+
+        function drawZodiacRing() {
+            const innerRadius = ZODIAC_RING_RADIUS;
+            const outerRadius = CHART_RADIUS;
+            const houseAngle = toRadians(360 / 12);
+            
+            // Draw the outer ring background (fixed position)
+            drawCircle(CENTER_X, CENTER_Y, outerRadius, '#222222', true); 
+            drawCircle(CENTER_X, CENTER_Y, innerRadius, '#000000', true); 
+
+            // Draw 12 House Segments
+            for (let i = 0; i < 12; i++) {
+                const startAngle = houseAngle * i;
+                const endAngle = houseAngle * (i + 1);
+                const sign = ZODIAC_SIGNS[i];
+                
+                // Draw Segment
+                ctx.beginPath();
+                ctx.arc(CENTER_X, CENTER_Y, outerRadius, startAngle, endAngle);
+                ctx.arc(CENTER_X, CENTER_Y, innerRadius, endAngle, startAngle, true);
+                ctx.closePath();
+                ctx.fillStyle = sign.color + '40'; // Semi-transparent
+                ctx.fill();
+                
+                // Draw Separator Line
+                ctx.strokeStyle = '#888888';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(CENTER_X + innerRadius * Math.cos(startAngle), CENTER_Y + innerRadius * Math.sin(startAngle));
+                ctx.lineTo(CENTER_X + outerRadius * Math.cos(startAngle), CENTER_Y + outerRadius * Math.sin(startAngle));
+                ctx.stroke();
+                
+                // Calculate position for Symbol Text (in the middle of the segment)
+                const textAngle = startAngle + houseAngle / 2;
+                const textRadius = innerRadius + (outerRadius - innerRadius) * 0.5;
+
+                ctx.save();
+                ctx.translate(CENTER_X + textRadius * Math.cos(textAngle), CENTER_Y + textRadius * Math.sin(textAngle));
+                ctx.rotate(textAngle + Math.PI / 2); // Rotate text to face outwards
+                
+                ctx.font = '24px Arial';
+                ctx.fillStyle = sign.color;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(sign.symbol, 0, 0); 
+                
+                ctx.restore();
+            }
+        }
+
+        function drawPlanets(elapsedTime) {
+            // Draw all orbits first for background
+            PLANETS.forEach(p => {
+                const radius = ORBIT_SPACING * p.radiusFactor * (PLANETS.length + 1);
+                drawCircle(CENTER_X, CENTER_Y, radius, '#333333', false, 0.5);
+            });
+
+            // Draw all planets
+            PLANETS.forEach(p => {
+                const radius = ORBIT_SPACING * p.radiusFactor * (PLANETS.length + 1);
+                
+                // Angular Velocity (ω) = 2π / Period. Speed is scaled by a factor.
+                const speedFactor = 10; // Controls overall simulation speed
+                const angle = (elapsedTime * speedFactor / p.period) % 360;
+                
+                const radAngle = toRadians(angle);
+
+                const x = CENTER_X + radius * Math.cos(radAngle);
+                const y = CENTER_Y + radius * Math.sin(radAngle);
+
+                // Planet position
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = p.color;
+                drawCircle(x, y, 8, p.color);
+                ctx.shadowBlur = 0;
+
+                // Planet symbol
+                ctx.font = '16px Arial';
+                ctx.fillStyle = '#FFFFFF';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(p.symbol, x, y + 1);
+            });
+        }
+        
+        // --- Animation Loop ---
+
+        function draw(timestamp) {
+            // Calculate delta time in milliseconds
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Draw Zodiac Ring and Houses
+            drawZodiacRing();
+
+            // 2. Draw Sun
+            drawSun();
+
+            // 3. Update time and Draw Planets
+            if (isPlaying) {
+                // Time update is based on real-time elapsed for smooth animation
+                timeOffset += deltaTime / 1000; // timeOffset is in seconds
+            }
+
+            // Draw planets based on total elapsed seconds
+            drawPlanets(timeOffset);
+            
+            // 4. Draw Center Circle again to cover the innermost orbits
+            drawCircle(CENTER_X, CENTER_Y, ORBIT_SPACING * 1.5, '#000000', true); 
+
+            requestAnimationFrame(draw);
+        }
+
+        // --- Event Handlers ---
+
+        toggleButton.addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            statusDisplay.textContent = isPlaying ? "Playing" : "Paused";
+            statusDisplay.classList.toggle('text-lime-400', isPlaying);
+            statusDisplay.classList.toggle('text-yellow-400', !isPlaying);
+            toggleButton.textContent = isPlaying ? "Pause" : "Play";
+        });
+
+        // Start the simulation
+        requestAnimationFrame(draw);
+
+    </script>
+</body>
+</html>
+
