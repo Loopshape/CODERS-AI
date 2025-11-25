@@ -17,7 +17,7 @@ TOOLS_DIR="$PROJECT_ROOT/ai_tools"
 MEMORY_FILE="$PROJECT_ROOT/ai_memory.json"
 MAX_PARALLEL_JOBS=6
 CHUNK_SIZE=5000  # characters per AI prompt chunk
-MODELS=("cube" "core" "loop" "wave" "coin" "code")
+MODELS=("deepseek-v3.1:671b-cloud" "cube" "core" "loop" "line" "wave" "coin" "code")
 
 # Ensure directories exist
 mkdir -p "$BACKUP_DIR" "$TMP_DIR" "$RESULTS_DIR" "$TOOLS_DIR"
