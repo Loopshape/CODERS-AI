@@ -44,7 +44,7 @@ error_exit() {
 # DEPENDENCY CHECK
 # ----------------------------
 check_dependencies() {
-    local deps=("curl" "jq" "find" "file" "md5sum" "stat" "inotifywait" "fold")
+    local deps=("curl" "jq" "find" "file" "md5sum" "stat" "fold")
     for dep in "${deps[@]}"; do
         command -v "$dep" &> /dev/null || error_exit "Required dependency '$dep' not found"
     done
