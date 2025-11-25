@@ -16,7 +16,7 @@ MEMORY_FILE="$PROJECT_ROOT/ai_memory.json"
 TMP_DIR="$PROJECT_ROOT/tmp"
 MAX_PARALLEL_JOBS=6
 CHUNK_SIZE=5000
-MODELS=("cube" "core" "loop" "wave" "line" "coin" "code" "deepseek-v3.1:671b-cloud")
+MODELS=("deepseek-v3.1:671b-cloud" "cube" "core" "loop" "wave" "line" "coin" "code" "work")
 
 mkdir -p "$BACKUP_DIR" "$RESULTS_DIR" "$TOOLS_DIR" "$TMP_DIR"
 
