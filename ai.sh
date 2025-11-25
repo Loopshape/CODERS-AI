@@ -1,168 +1,270 @@
-#!/usr/bin/env bash
+#!/bin/bash
+# ai_orchestrator.sh - Full enhanced autonomous Ollama AI orchestration
+# Features: full resource access, parallel AI pipelines, persistent memory, automatic tool generation
 
-# Author: Aris Arjuna Noorsanto <exe.opcode@gmail.com>
+set -euo pipefail
 
-# AI / AGI / AIM Unified Processing Tool
-# Termux/Proot-Distro compatible with Ollama gemma3:1b
+# ----------------------------
+# CONFIGURATION
+# ----------------------------
+PROJECT_ROOT="${PROJECT_ROOT:-$HOME/CODERS-AI}"
+OLLAMA_HOST="${OLLAMA_HOST:-localhost:11434}"
+BACKUP_DIR="$PROJECT_ROOT/backup_$(date +%Y%m%d_%H%M%S)"
+LOG_FILE="$PROJECT_ROOT/ai_orchestrator.log"
+TMP_DIR="$PROJECT_ROOT/tmp"
+RESULTS_DIR="$PROJECT_ROOT/ai_results"
+TOOLS_DIR="$PROJECT_ROOT/ai_tools"
+MEMORY_FILE="$PROJECT_ROOT/ai_memory.json"
+MAX_PARALLEL_JOBS=6
+CHUNK_SIZE=5000  # characters per AI prompt chunk
+MODELS=("cube" "core" "loop" "wave" "coin" "code")
 
-set -eu
-IFS=$'\n\t'
+# Ensure directories exist
+mkdir -p "$BACKUP_DIR" "$TMP_DIR" "$RESULTS_DIR" "$TOOLS_DIR"
 
-# -----------------------
-# CONFIG
-# -----------------------
-HOME_ROOT="/home/loop/CODERS-AI"
-BACKUP_DIR="$HOME_ROOT/.ai_backups"
-mkdir -p "$BACKUP_DIR"
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-UNIVERSAL_LAW=$(cat <<'EOF'
-:bof:
-redo complete layout and design an advanced symetrics to proximity accordance for dedicated info-quota alignments, which grant a better adjustment for leading besides subliminal range compliance promisings, that affair any competing content relations into a cognitive intuitition guidance comparison between space and gap implies, that are suggesting the viewer a subcoordinated experience alongside repetitive tasks and stoic context sortings, all cooperational aligned to timed subjects of importance accordingly to random capacity within builds of data statements, that prognose the grid reliability of a mockup as given optically acknowledged for a more robust but also as attractive rulership into golden-ratio item handling
-:eof:
-EOF
-)
+# ----------------------------
+# LOGGING
+# ----------------------------
+log() {
+    echo -e "${CYAN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
+}
 
-# -----------------------
-# HELPER LOGGING
-# -----------------------
-log_info()    { printf '\033[34m[*] %s\033[0m\n' "$*"; }
-log_success() { printf '\033[32m[+] %s\033[0m\n' "$*"; }
-log_warn()    { printf '\033[33m[!] %s\033[0m\n' "$*"; }
-log_error()   { printf '\033[31m[-] %s\033[0m\n' "$*"; }
+error_exit() {
+    echo -e "${RED}ERROR: $1${NC}" | tee -a "$LOG_FILE"
+    exit 1
+}
 
-backup_file() {
+# ----------------------------
+# DEPENDENCY CHECK
+# ----------------------------
+check_dependencies() {
+    local deps=("curl" "jq" "find" "file" "md5sum" "stat" "inotifywait" "fold")
+    for dep in "${deps[@]}"; do
+        command -v "$dep" &> /dev/null || error_exit "Required dependency '$dep' not found"
+    done
+
+    curl -s "http://$OLLAMA_HOST/api/tags" &> /dev/null || error_exit "Ollama not accessible at $OLLAMA_HOST"
+}
+
+# ----------------------------
+# AI MEMORY MANAGEMENT
+# ----------------------------
+init_ai_memory() {
+    if [[ ! -f "$MEMORY_FILE" ]]; then
+        echo "{}" > "$MEMORY_FILE"
+    fi
+}
+
+load_ai_memory() {
+    MEMORY=$(cat "$MEMORY_FILE")
+}
+
+update_ai_memory() {
     local file="$1"
-    [ -f "$file" ] || return
+    local summary="$2"
     local ts
-    ts=$(date +%Y%m%d%H%M%S)
-    cp "$file" "$BACKUP_DIR/$(basename "$file").$ts.bak"
-    log_info "Backup created for $file -> $BACKUP_DIR"
+    ts=$(date +%s)
+    MEMORY=$(jq --arg f "$file" --arg t "$ts" --arg s "$summary" \
+        '.[$f] = {last_update: $t, summary: $s}' <<< "$MEMORY")
+    echo "$MEMORY" > "$MEMORY_FILE"
 }
 
-fetch_url() {
-    local url="$1"
-    if command -v curl >/dev/null 2>&1; then
-        curl -sL "$url"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -qO- "$url"
-    else
-        log_error "curl or wget required to fetch URLs"
+# ----------------------------
+# BACKUP
+# ----------------------------
+backup_files() {
+    log "Creating backup in $BACKUP_DIR"
+    find "$PROJECT_ROOT" -type f \
+        -not -path "$BACKUP_DIR/*" \
+        -not -path "$RESULTS_DIR/*" \
+        -not -name "*.log" \
+        -exec cp --parents {} "$BACKUP_DIR/" \;
+}
+
+# ----------------------------
+# AI CALL
+# ----------------------------
+call_ollama() {
+    local model="$1"
+    local prompt="$2"
+
+    local response
+    response=$(curl -s -X POST "http://$OLLAMA_HOST/api/generate" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg model "$model" --arg prompt "$prompt" '{model: $model, prompt: $prompt, stream: false}')")
+
+    if echo "$response" | jq -e '.error' &> /dev/null; then
+        echo "ERROR: $(echo "$response" | jq -r '.error')" >&2
+        return 1
     fi
+    echo "$response" | jq -r '.response'
 }
 
-get_prompt() {
-    local input="$1"
-    case "$input" in
-        http://*|https://*) fetch_url "$input" ;;
-        *) [ -f "$input" ] && cat "$input" || echo "$input" ;;
-    esac
-}
-
-# -----------------------
-# HTML/JS/DOM ENHANCEMENT
-# -----------------------
-html_enhance() {
+# ----------------------------
+# FILE ANALYSIS
+# ----------------------------
+analyze_file_basic() {
     local file="$1"
-    [ -f "$file" ] || { log_warn "HTML file not found: $file"; return; }
-    backup_file "$file"
-    log_info "Enhancing HTML/JS/DOM for $file..."
-
-    local content
-    content=$(<"$file")
-
-    # Inject simple neon theme if <head> exists
-    if [[ "$content" == *"<head>"* && "$content" != *"--main-bg"* ]]; then
-        content=$(echo "$content" | sed -E "s|<head>|<head><style>:root{--main-bg:#8B0000;--main-fg:#fff;--btn-color:#ff00ff;--link-color:#ffff00;}</style>|")
-    fi
-
-    # Add AI comment to JS functions (simple regex)
-    if command -v perl >/dev/null 2>&1; then
-        content=$(echo "$content" | perl -0777 -pe 's|function\s+([a-zA-Z0-9_]+)\s*\((.*?)\)\s*\{(?!\s*\/\*\s*AI:)|function \1(\2) { /* AI: optimize this function */ |g')
-    fi
-
-    # Event listener monitoring
-    content=$(echo "$content" | sed -E "s|\.addEventListener\((['\"])(.*?)\1,(.*)\)|.addEventListener(\1\2\1, /* AI: monitored */\3)|g")
-
-    # Replace div.section with semantic <section>
-    content=$(echo "$content" | sed -E 's|<div class="section"|<section class="section"|g; s|</div><!-- .section -->|</section>|g')
-
-    # Accessibility roles
-    content=$(echo "$content" | sed -E 's|<nav|<nav role="navigation"|g; s|<header|<header role="banner"|g; s|<main|<main role="main"|g; s|<footer|<footer role="contentinfo"|g')
-
-    echo "$content" > "$file.processed"
-    log_success "Enhanced HTML saved as $file.processed"
+    local type size md5
+    type=$(file -b "$file")
+    size=$(stat -c%s "$file")
+    md5=$(md5sum "$file" | cut -d' ' -f1)
+    echo -e "File: $file\nType: $type\nSize: $size bytes\nMD5: $md5\n---"
 }
 
-# -----------------------
-# OLLAMA GEMMA3:1B PROMPT
-# -----------------------
-ollama_run() {
-    local prompt="$1"
-    log_info "Running prompt on THE CUBE..."
-    pkill -f 'ollama serve' 2>/dev/null || true
-    ollama serve &
-    sleep 2
-    echo "$prompt" | ollama run cube:latest
+ai_analyze_file_parallel() {
+    local file="$1"
+    local results_dir="$2"
+    mkdir -p "$results_dir"
+
+    local content chunked
+    content=$(cat "$file")
+
+    # Chunk large files
+    chunked=""
+    while read -r -d '' piece; do
+        chunked+="$piece"$'\n---CHUNK---\n'
+    done < <(fold -w "$CHUNK_SIZE" < <(echo "$content") -s -z)
+
+    declare -A pids
+    for model in "${MODELS[@]}"; do
+        (
+            local prompt="Analyze file with model '$model':\n$chunked"
+            if result=$(call_ollama "$model" "$prompt"); then
+                echo -e "=== $model Analysis ===\n$result" > "$results_dir/${model}.txt"
+            else
+                echo "Failed $model analysis" > "$results_dir/${model}_error.txt"
+            fi
+        ) &
+        pids[$model]=$!
+    done
+
+    # Wait for all parallel jobs
+    for pid in "${pids[@]}"; do wait "$pid"; done
 }
 
-# -----------------------
-# AI MODES
-# -----------------------
-mode_file() { for f in "$@"; do html_enhance "$f"; done; }
-mode_script() { log_info "Processing script content..."; }
-mode_batch() { local pattern="$1"; shift; for f in $pattern; do html_enhance "$f"; done; }
-mode_env() { log_info "Scanning environment..."; env | sort; df -h; ls -la "$HOME_ROOT"; ls -la /etc; }
-mode_pipeline() { for f in "$@"; do html_enhance "$f"; done; }
+# ----------------------------
+# FILE ENHANCEMENT
+# ----------------------------
+create_enhanced_file() {
+    local file="$1"
+    local results_dir="$2"
+    mkdir -p "$results_dir"
 
-# -----------------------
-# AGI MODES
-# -----------------------
-agi_watch() { local folder="$1"; local pattern="${2:-*}"; log_info "Watching $folder for changes matching $pattern"; command -v inotifywait >/dev/null 2>&1 || { log_error "Install inotify-tools"; return; }; inotifywait -m -r -e modify,create,move --format '%w%f' "$folder" | while read file; do case "$file" in $pattern) log_info "Detected change: $file"; html_enhance "$file"; esac; done; }
-agi_screenshot() { log_info "Screenshot disabled in Termux/Proot"; }
+    local enhanced
+    enhanced=$(cat "$file")
 
-# -----------------------
-# .bashrc ADAPTATION
-# -----------------------
-adapt_bashrc() {
-    local bashrc="$HOME_ROOT/.bashrc"
-    backup_file "$bashrc"
-    log_info "Rewriting .bashrc with AI/AGI/AIM configuration..."
-    cat > "$bashrc" <<'EOF'
-# Auto-generated .bashrc by ~/bin/ai
-export PATH="$HOME/bin:$PATH"
-alias ai='~/bin/ai'
-EOF
-    log_success ".bashrc rewritten successfully."
-    . "$bashrc"
+    # Sequential AI passes for enhancement
+    if new=$(call_ollama "cube" "Improve structure:\n$enhanced"); then enhanced="$new"; fi
+    if new=$(call_ollama "code" "Enhance readability, best practices, optimizations:\n$enhanced"); then enhanced="$new"; fi
+    if new=$(call_ollama "coin" "Optimize performance and efficiency:\n$enhanced"); then enhanced="$new"; fi
+
+    echo "$enhanced" > "$results_dir/enhanced_file"
 }
 
-# -----------------------
-# INSTALLER MODE
-# -----------------------
-mode_init() {
-    log_info "Installing AI/AGI/AIM tool..."
-    mkdir -p "$HOME_ROOT/bin"
-    cp -f "$0" "$HOME_ROOT/bin/ai"
-    chmod +x "$HOME_ROOT/bin/ai"
-    log_success "Script installed at $HOME_ROOT/bin/ai"
-    adapt_bashrc
+# ----------------------------
+# PROCESS SINGLE FILE
+# ----------------------------
+process_file() {
+    local file="$1"
+    local rel_path
+    rel_path=$(realpath --relative-to="$PROJECT_ROOT" "$file")
+    local fdir="$RESULTS_DIR/$rel_path"
+    mkdir -p "$fdir"
+
+    log "Processing $file"
+
+    analyze_file_basic "$file" > "$fdir/basic_analysis.txt"
+    ai_analyze_file_parallel "$file" "$fdir"
+    create_enhanced_file "$file" "$fdir"
+
+    # Update AI memory
+    local summary
+    summary=$(head -n 20 "$fdir/enhanced_file" 2>/dev/null || echo "Enhanced")
+    update_ai_memory "$rel_path" "$summary"
+
+    log "Completed $file (memory updated)"
 }
 
-# -----------------------
-# MAIN ARGUMENT PARSING
-# -----------------------
-if [ $# -eq 0 ]; then
-    log_info "Usage: $0 <mode> [files/patterns] [prompt]"
-    exit 0
+# ----------------------------
+# AUTOMATIC TOOL GENERATION
+# ----------------------------
+generate_ai_tools() {
+    mkdir -p "$TOOLS_DIR"
+
+    # analyze_file.sh
+    cat > "$TOOLS_DIR/analyze_file.sh" << 'EOF'
+#!/bin/bash
+FILE="$1"
+if [[ -z "$FILE" || ! -f "$FILE" ]]; then
+    echo "Usage: $0 <file>"
+    exit 1
 fi
+echo "AI File Analysis Tool"
+echo "File: $FILE"
+echo "Type: $(file -b "$FILE")"
+echo "Size: $(stat -c%s "$FILE") bytes"
+EOF
 
-case "$1" in
-    init) shift; mode_init "$@" ;;
-    -) shift; mode_file "$@" ;;
-    +) shift; mode_script "$@" ;;
-    \*) shift; mode_batch "$@" ;;
-    .) shift; mode_env "$@" ;;
-    :) shift; IFS=':' read -r -a files <<< "$1"; mode_pipeline "${files[@]}" ;;
-    agi) shift; case "$1" in +|~) shift; agi_watch "$@" ;; -) shift; agi_screenshot "$@" ;; *) shift; agi_watch "$@" ;; esac ;;
-    *) PROMPT=$(get_prompt "$*"); ollama_run "$PROMPT" ;;
-esac
+    # enhance_code.sh
+    cat > "$TOOLS_DIR/enhance_code.sh" << 'EOF'
+#!/bin/bash
+FILE="$1"
+OLLAMA_HOST="${OLLAMA_HOST:-localhost:11434}"
+if [[ -z "$FILE" || ! -f "$FILE" ]]; then
+    echo "Usage: $0 <file>"
+    exit 1
+fi
+CONTENT=$(cat "$FILE")
+curl -s -X POST "http://$OLLAMA_HOST/api/generate" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"code\",\"prompt\":\"Enhance this code:\\n$CONTENT\",\"stream\":false}" | jq -r '.response'
+EOF
+
+    chmod +x "$TOOLS_DIR"/*.sh
+    log "AI tools generated in $TOOLS_DIR"
+}
+
+# ----------------------------
+# AUTONOMOUS WORKFLOW
+# ----------------------------
+autonomous_loop() {
+    log "Starting autonomous AI workflow..."
+    while true; do
+        # Detect new or recently modified files
+        mapfile -t files < <(find "$PROJECT_ROOT" -type f \
+            -not -path "$BACKUP_DIR/*" \
+            -not -path "$RESULTS_DIR/*" \
+            -not -name "*.log" \
+            -mmin -1)
+
+        for f in "${files[@]}"; do
+            process_file "$f" &
+            # Respect parallel job limit
+            while (( $(jobs -r | wc -l) >= MAX_PARALLEL_JOBS )); do sleep 0.2; done
+        done
+
+        sleep 30
+    done
+}
+
+# ----------------------------
+# MAIN
+# ----------------------------
+main() {
+    check_dependencies
+    init_ai_memory
+    load_ai_memory
+    backup_files
+    generate_ai_tools
+    autonomous_loop
+}
+
+main "$@"
+

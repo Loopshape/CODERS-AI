@@ -1,0 +1,5 @@
+File: ./watcher.sh
+Type: Bourne-Again shell script, Unicode text, UTF-8 text executable
+Size: 545 bytes
+MD5: 230badb2c56430e39c8b6db3b84d4421
+---
