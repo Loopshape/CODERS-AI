@@ -1,5 +1,0 @@
-{
-  "name": "Coders API",
-  "description": "An AI-powered code review tool that uses the Gemini API to analyze it's crosscode and provide compiler feedback. It also includes an interface to forward the review to an Ollama API.",
-  "requestFramePermissions": []
-}
