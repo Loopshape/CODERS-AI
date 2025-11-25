@@ -30,7 +30,7 @@ MEMORY_FILE="${MEMORY_FILE:-$PROJECT_ROOT/ai_memory.json}"
 SCOREBOARD_FILE="${SCOREBOARD_FILE:-$PROJECT_ROOT/ai_scoreboard.json}"
 AUTO_APPROVE="${AUTO_APPROVE:-false}"
 
-MODELS=("cube" "core" "loop" "wave" "coin" "code")
+MODELS=("deepseek-v3.1:671b-cloud" "cube" "core" "loop" "wave" "line" "coin" "code" "work")
 
 mkdir -p "$TMP_DIR" "$RESULTS_DIR" "$TOOLS_DIR" "$BACKUP_DIR"
 
