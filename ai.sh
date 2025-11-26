@@ -30,7 +30,7 @@ MEMORY_FILE="${MEMORY_FILE:-$PROJECT_ROOT/ai_memory.json}"
 SCOREBOARD_FILE="${SCOREBOARD_FILE:-$PROJECT_ROOT/ai_scoreboard.json}"
 AUTO_APPROVE="${AUTO_APPROVE:-true}"
 
-MODELS=("cube" "core" "loop" "wave" "line" "coin" "code")
+MODELS=("cube" "core" "loop" "wave" "line" "coin" "code" "work")
 
 mkdir -p "$TMP_DIR" "$RESULTS_DIR" "$TOOLS_DIR" "$BACKUP_DIR"
 
