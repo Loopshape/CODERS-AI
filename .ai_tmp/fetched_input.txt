@@ -1,0 +1,1 @@
+analyze git repository ./. with focus on localhost:11434 ollama ./ai.sh orchestrator
