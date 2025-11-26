@@ -3,186 +3,167 @@
 <head>
 <meta charset="UTF-8">
 <title>Quantum Fractal AI Cockpit</title>
-
-<!-- CDN Libraries -->
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.23.1/ace.js"></script>
-
 <style>
-body{margin:0;font-family:monospace;background:#111;color:#0f0;}
-#aiOverlay{position:fixed;top:5px;left:5px;width:95vw;height:95vh;background:#111;color:#0f0;z-index:999999;border-radius:10px;box-shadow:0 0 20px #0f0;display:flex;flex-direction:column;}
-#aiHeader{flex:none;padding:5px;background:#222;display:flex;justify-content:space-between;cursor:move;}
-#aiHeader button{background:#0f0;color:#000;border:none;padding:2px 6px;}
-#aiMain{flex:1;display:flex;overflow:hidden;}
-#aiLeft{width:40%;display:flex;flex-direction:column;border-right:1px solid #0f0;}
-#aiTabs{flex:none;padding:2px;background:#111;display:flex;gap:2px;}
-#aiEditorContainer{flex:1;position:relative;}
-#aiEditor{width:100%;height:100%;}
-#modelStreams{flex:none;height:100px;overflow:auto;background:#111;border-top:1px solid #0f0;padding:2px;}
-#aiRight{flex:1;display:flex;flex-direction:column;}
-#aiPreview{flex:1;border:none;}
-#ai3D{height:250px;}
-#aiConsole{flex:none;padding:5px;background:#111;height:150px;overflow:auto;}
+  body { margin:0; background:#0f0f2a; overflow:hidden; font-family:sans-serif; display:flex; }
+  #editor { width:50%; height:100vh; }
+  #preview { width:50%; height:100vh; border-left:2px solid #222; overflow:auto; background:#fff; color:#000; padding:10px; }
+  canvas { position:absolute; right:0; top:0; width:50%; height:100%; pointer-events:none; }
 </style>
 </head>
 <body>
 
-<div id="aiOverlay">
-  <div id="aiHeader">
-    <span>AI Orchestrator Quantum Dashboard</span>
-    <button id="aiClose">X</button>
-  </div>
-  <div id="aiMain">
-    <div id="aiLeft">
-      <div id="aiTabs">
-        <button id="tabEditor">Editor</button>
-        <button id="tabConsole">Console</button>
-        <button id="tabReplay">Replay</button>
-      </div>
-      <div id="aiEditorContainer"><div id="aiEditor"></div></div>
-      <div id="modelStreams"></div>
-    </div>
-    <div id="aiRight">
-      <iframe id="aiPreview"></iframe>
-      <canvas id="ai3D"></canvas>
-    </div>
-  </div>
-  <div id="aiConsole"></div>
-</div>
+<div id="editor"></div>
+<div id="preview"><h2>Live Preview</h2></div>
+<canvas id="three-canvas"></canvas>
 
-<script>
-(async function(){
-'use strict';
+<!-- ACE Editor -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.14.0/ace.js"></script>
 
-const REMOTE_INDEX='https://raw.githubusercontent.com/Loopshape/CODERS-AI/refs/heads/main/index.html';
-const LOCAL_MODELS=['cube','core','loop','wave','coin','code'];
-let editor, sessionLogs=[], modelObjects={};
+<!-- Three.js ES Module -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
 
-// --- Utilities ---
-function log(msg){ $('#aiConsole').append('<div>'+msg+'</div>'); $('#aiConsole').scrollTop($('#aiConsole')[0].scrollHeight); }
-function logModel(model,msg){
-    if(!modelObjects[model]){
-        let elem=$('<div><b>'+model+':</b> <span></span></div>').appendTo('#modelStreams');
-        modelObjects[model]={span: elem.find('span')[0], particles:[], color:new THREE.Color(Math.random(),Math.random(),Math.random())};
-    }
-    modelObjects[model].span.textContent=msg;
-}
+// ------------------ Three.js cockpit ------------------
+const canvas = document.getElementById('three-canvas');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(70, canvas.clientWidth/canvas.clientHeight, 0.1, 1000);
+camera.position.z = 5;
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setSize(canvas.clientWidth, canvas.clientHeight);
 
-// --- ACE Editor ---
-editor=ace.edit("aiEditor");
-editor.setTheme("ace/theme/monokai");
-editor.session.setMode("ace/mode/html");
-editor.setValue("Loading index.html...");
+const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0xff00ff}));
+scene.add(cube);
+const light = new THREE.PointLight(0xffffff,1);
+light.position.set(5,5,5);
+scene.add(light);
 
-// --- Fetch HTML ---
-async function fetchIndex(){
-    let html=await new Promise(res=>$.get(REMOTE_INDEX,data=>res(data)));
-    if(!/<html/i.test(html)) html=`<html><head></head><body>${html}</body></html>`;
-    if(!/<head/i.test(html)) html=html.replace(/<html.*?>/i,'$&<head></head>');
-    if(!/<body/i.test(html)) html=html.replace(/<\/head>/i,'$&<body></body>');
-    html=html.replace(/<\/head>/i, `
-<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-</head>`);
-    editor.setValue(html,-1);
-    updatePreview(html);
-}
-fetchIndex();
-function updatePreview(html){ document.getElementById('aiPreview').srcdoc=html; }
-
-// --- Three.js 3D scene ---
-const canvas=document.getElementById('ai3D');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-const scene=new THREE.Scene();
-const camera=new THREE.PerspectiveCamera(50,canvas.clientWidth/canvas.clientHeight,0.1,100);
-camera.position.z=10;
-
-// Central final-answer cube
-const finalCube=new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({color:0x00ff00}));
-scene.add(finalCube);
-
-// Create semantic particle per model
-LOCAL_MODELS.forEach((model,i)=>{
-    const particles=[];
-    for(let j=0;j<12;j++){
-        const geo=new THREE.SphereGeometry(0.15,8,8);
-        const mat=new THREE.MeshBasicMaterial({color:Math.random()*0xffffff});
-        const mesh=new THREE.Mesh(geo,mat);
-        mesh.position.set(Math.random()*6-3, Math.random()*4-2, Math.random()*4-2);
-        scene.add(mesh);
-        particles.push(mesh);
-    }
-    modelObjects[model].particles=particles;
+const models = ['cube','core','loop','wave','coin','code'];
+const particles = {};
+models.forEach(m=>{
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.1,16,16), new THREE.MeshStandardMaterial({color:Math.random()*0xffffff}));
+  mesh.position.set(Math.random()*4-2, Math.random()*4-2, Math.random()*4-2);
+  mesh.progress = 0;
+  scene.add(mesh);
+  particles[m]=mesh;
 });
 
-// Animate semantic particles
-function animate3D(){
-    requestAnimationFrame(animate3D);
-    LOCAL_MODELS.forEach(model=>{
-        modelObjects[model].particles.forEach(p=>{
-            p.position.x += (finalCube.position.x-p.position.x)*0.02;
-            p.position.y += (finalCube.position.y-p.position.y)*0.02;
-            p.position.z += (finalCube.position.z-p.position.z)*0.02;
-        });
-    });
-    finalCube.rotation.x+=0.005; finalCube.rotation.y+=0.01;
-    renderer.setSize(canvas.clientWidth,canvas.clientHeight);
-    renderer.render(scene,camera);
+function animate(){
+  requestAnimationFrame(animate);
+  cube.rotation.x += 0.003;
+  cube.rotation.y += 0.004;
+  for(const m of models){
+    const p = particles[m];
+    p.position.lerp(cube.position, p.progress||0.02);
+  }
+  renderer.render(scene,camera);
 }
-animate3D();
+animate();
 
-// GSAP overlay pulse
-gsap.to('#aiOverlay',{duration:1.5,scale:1.01,repeat:-1,yoyo:true,ease:'sine.inOut'});
+// ------------------ WebSocket Singleton + Retry ------------------
+let ws = null;
+let wsQueue = [];
+let wsRetries = 0;
+const maxRetries = 3;
+const wsUrl = 'ws://localhost:3000';
 
-// Ollama simulation for semantic particle updates
-async function runOllama(prompt){
-    const promises=LOCAL_MODELS.map((model)=>{
-        return new Promise(res=>{
-            let progress=0;
-            const interval=setInterval(()=>{
-                progress+=Math.floor(Math.random()*5)+1;
-                if(progress>100) progress=100;
-                logModel(model,progress+'%');
-                modelObjects[model].particles.forEach(p=>{
-                    p.material.color.setHSL(Math.random(),1,progress/200+0.25);
-                });
-                if(progress>=100){ clearInterval(interval); res(`[${model.toUpperCase()}] final chunk`); }
-            },Math.random()*100);
-        });
-    });
-    const results=await Promise.all(promises);
-    const merged=results.join('\n');
-    sessionLogs.push({prompt,merged,time:new Date().toISOString()});
-    log('[OLLAMA RESULT]\n'+merged);
-    updatePreview(merged);
+function initWebSocket(){
+  if(ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return ws;
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = ()=>{
+    console.log('[WS] connected');
+    wsRetries=0;
+    while(wsQueue.length>0) ws.send(JSON.stringify(wsQueue.shift()));
+  };
+  ws.onmessage = e=>{
+    const msg = JSON.parse(e.data);
+    if(msg.type==='modelProgress' && particles[msg.model]) particles[msg.model].progress=(msg.progress||0)/100;
+    if(msg.type==='modelDone' && particles[msg.model]) particles[msg.model].progress=1;
+    if(msg.type==='final') console.log('[FINAL RESULT]', msg.result);
+  };
+  ws.onclose = e=>{
+    console.warn('[WS] closed');
+    wsRetries++;
+    if(wsRetries<=maxRetries){
+      setTimeout(initWebSocket, 2000);
+    } else {
+      console.warn('[WS] Max retries reached. Using simulated mode.');
+      simulateModels();
+    }
+  };
+  ws.onerror = e=>{
+    console.error('[WS] error', e);
+    ws.close();
+  };
+  return ws;
 }
 
-// Hotkeys Shift+Windows
+// ------------------ HTML/JS Auto-Enhancer ------------------
+function htmlEnhanceContent(content){
+  if(!content) return content;
+  if(!content.includes('--main-bg') && content.includes('<head>'))
+    content = content.replace(/<head>/i,'<head><style>:root{--main-bg:#0f0f2a;--main-fg:#fff;--btn-color:#ff00ff;--link-color:#ffff00;}</style>');
+  content = content.replace(/function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/g,'function $1($2) { /* AI: optimize */');
+  content = content.replace(/\.addEventListener\((['"])(.*?)\1,(.*)\)/g,'.addEventListener($1$2$1, /* AI: monitored */$3)');
+  content = content.replace(/<div class="section"/gi,'<section class="section"');
+  content = content.replace(/<\/div><!-- .section -->/gi,'</section>');
+  content = content.replace(/<nav/gi,'<nav role="navigation"');
+  content = content.replace(/<header/gi,'<header role="banner"');
+  content = content.replace(/<main/gi,'<main role="main"');
+  content = content.replace(/<footer/gi,'<footer role="contentinfo"');
+  return content;
+}
+
+// ------------------ Send prompt safely ------------------
+function sendPrompt(prompt){
+  const enhanced = htmlEnhanceContent(prompt);
+  if(!ws || ws.readyState!==WebSocket.OPEN){
+    console.warn('[WS] not connected, simulating prompt');
+    simulateModels();
+  } else ws.send(JSON.stringify({type:'prompt',prompt:enhanced}));
+}
+
+// ------------------ Simulated Models ------------------
+function simulateModels(){
+  models.forEach((m,i)=>{
+    const interval = setInterval(()=>{
+      const p = particles[m];
+      p.progress += 0.01;
+      if(p.progress>=1){ p.progress=1; clearInterval(interval); }
+    },100 + i*50);
+  });
+}
+
+// ------------------ Live AJAX Preview ------------------
+function updatePreview(content){
+  const preview = document.getElementById('preview');
+  preview.innerHTML = "<h2>Live Preview</h2><iframe style='width:100%;height:90%;border:none;' srcdoc='"+content.replace(/'/g,"&#39;")+"'></iframe>";
+}
+
+// ------------------ ACE Editor ------------------
+const editor = ace.edit('editor');
+editor.setTheme('ace/theme/monokai');
+editor.session.setMode('ace/mode/html');
+editor.session.setValue('<!DOCTYPE html>\n<html><head></head><body><h1>Hello Quantum AI</h1></body></html>');
+
+// Real-time update preview on editor change
+editor.session.on('change',()=>{
+  updatePreview(editor.getValue());
+});
+
+// ------------------ Hotkey: Shift+Win+R ------------------
 window.addEventListener('keydown',e=>{
-    if(e.shiftKey && e.metaKey && e.code==='Space'){ $('#aiOverlay').show(); }
-    if(e.shiftKey && e.metaKey && e.code==='KeyE'){ runEnhance(); }
-    if(e.shiftKey && e.metaKey && e.code==='KeyR'){ runOllama(editor.getValue()); }
+  if(e.shiftKey && e.metaKey && e.code==='KeyR'){
+    sendPrompt(editor.getValue());
+  }
 });
 
-// Enhance function
-function runEnhance(){
-    let val=editor.getValue();
-    val = val.replace(/<head(.*?)>/i, `<head$1><style>:root{--main-bg:linear-gradient(135deg,#0f0f2a,#2b1055);}body{background:var(--main-bg);}</style>`);
-    val = val.replace(/function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)\s*\{/g,'function $1($2){/* AI: optimized */');
-    val = val.replace(/\.addEventListener\((['\"])(.*?)\1\s*,/g,'.addEventListener($1$2$1,/* AI: monitored */ ');
-    updatePreview(val);
-    log('[ENHANCE] Applied');
-}
+// ------------------ Init ------------------
+initWebSocket();
+setTimeout(()=>{ if(!ws || ws.readyState!==WebSocket.OPEN) simulateModels(); },2000);
+updatePreview(editor.getValue());
 
-// Close cockpit
-$('#aiClose').click(()=>$('#aiOverlay').hide());
-
-})();
 </script>
-
 </body>
 </html>
 

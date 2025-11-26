@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Neuron Hemisphere v1.0</title>
+    <title>AI Hemisphere</title>
     <!-- Load Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Load Tailwind CSS -->
@@ -41,7 +41,7 @@
     <div id="container">
         <!-- Overlay for Title and Instructions -->
         <div class="info-overlay">
-            <h1 class="text-3xl font-bold mb-2">LOCAL AI HEMISPHERE</h1>
+            <h1 class="text-3xl font-bold mb-2">AI HEMISPHERE</h1>
             <p class="text-sm">Drag/Swipe to inspect the internal state.</p>
             <p class="text-xs mt-1">Data Flow: <span class="text-green-400">Stable</span></p>
         </div>
@@ -56,9 +56,9 @@
 
         // --- Configuration ---
         const HEMISPHERE_RADIUS = 5;
-        const PARTICLE_COUNT = 500;
-        const NEURON_COUNT = 50;
-        const ROTATION_SPEED = 0.005;
+        const PARTICLE_COUNT = 1000;
+        const NEURON_COUNT = 100;
+        const ROTATION_SPEED = 0.01;
 
         // Variables for interaction (mouse/touch)
         let isDragging = false;
@@ -114,8 +114,8 @@
             
             // Translucent, glowing material
             const material = new THREE.MeshPhongMaterial({
-                color: 0x00ffff, 
-                emissive: 0x002222, // Subtle cyan glow
+                color: 0x00BFFF, 
+                emissive: 0x005FFF, // Subtle cyan glow
                 opacity: 0.1, 
                 transparent: true,
                 side: THREE.DoubleSide,
