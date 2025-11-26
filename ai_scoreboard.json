@@ -7,53 +7,53 @@
     "score": 0
   },
   "cube": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 3,
+    "applied": 3,
+    "total_bytes": 7993,
+    "avg_latency": 6052720,
+    "score": 38
   },
   "core": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 4,
+    "applied": 4,
+    "total_bytes": 15155,
+    "avg_latency": 6956024,
+    "score": 70
   },
   "loop": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 4,
+    "applied": 4,
+    "total_bytes": 23753,
+    "avg_latency": 6172290,
+    "score": 21
   },
   "wave": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 3,
+    "applied": 3,
+    "total_bytes": 9020,
+    "avg_latency": 835076,
+    "score": 13
   },
   "line": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 3,
+    "applied": 3,
+    "total_bytes": 6510,
+    "avg_latency": 6111559,
+    "score": 63
   },
   "coin": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 4,
+    "applied": 4,
+    "total_bytes": 24561,
+    "avg_latency": 6438249,
+    "score": 41
   },
   "code": {
-    "runs": 0,
-    "applied": 0,
-    "total_bytes": 0,
-    "avg_latency": 0,
-    "score": 0
+    "runs": 3,
+    "applied": 3,
+    "total_bytes": 8992,
+    "avg_latency": 852524,
+    "score": 53
   },
   "work": {
     "runs": 0,
@@ -61,5 +61,12 @@
     "total_bytes": 0,
     "avg_latency": 0,
     "score": 0
+  },
+  "cube core loop wave line coin code work": {
+    "runs": 2,
+    "applied": 2,
+    "total_bytes": 450,
+    "avg_latency": 2013,
+    "score": 39
   }
 }

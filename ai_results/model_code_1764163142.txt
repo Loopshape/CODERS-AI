@@ -1,0 +1,23 @@
+To achieve this task you would need to use a combination of GitHub APIs, HTML injection (which can be done using JavaScript), server-side scripting in NodeJS or any other language that supports web scraping like Python. This will not work for security reasons if the AI is supposed to access files from within its own repository and it's important you ensure this isn’t possible otherwise by following best practices of authentication, authorization etc as per your organization/project needs (e.g., GitHub API rate limits).
+
+However here are some pseudo code snippets that should give an idea about how such a task can be achieved: 
+(Note these examples use JavaScript for the injection part and Python's BeautifulSoup library to parse HTML)
+
+JavaScript (NodeJS): This is used when you need access files outside your own repository. You would probably also want some sort of server side scripting language such as Node JS or python in order to run a command after injected the code into .html file using 'child_process' module: 
+```javascript
+const { spawn } = require('child_process');
+spawn(`node /path/to/ai.sh ${file} > outFilePathHere && echo "Done" || (exit 1) `,[], { detached : false });   // Execute the command and redirect its output to a file for later use or print directly on console
+```
+(This is not actually executing any language code but it's creating an automation process.) In this example 'child_process.spawn()' function starts another instance of NodeJS (or Python) script with provided arguments, which are paths and details about command you want to execute - in your case the AI logic file path & output redirecting information
+Python:  Use BeautifulSoup for parsing HTML files then replace certain parts by calling scripts from ai.sh if necessary using subprocess module as follows:
+```python
+from bs4 import BeautifulSoup   #pip install beautifulsoup4 or use lxml in python3 -m pip install lxml  to add html parser library into your project for this task,
+with open('./index.html') as fp:    // Read HTML file from local system path 'file' and parse it with BeautifulSoup(fp , "lxml") .   #parse the content of index File using lxm parsing  method in Python or use xmltodict to do so if your html is too big.
+soup =BeautifulSoup(fp, 'html.parser')    // Now you can modify HTML as per requirement and save it with "w" mode which will overwrite existing file:   soup.prettify() .tofile('./index2134987560_modified.html' , encoding='utf-8',  )
+```    // Save the content back to index File using lxml parsing method in Python or use xmltodict module into your project as above example if html is too big. Replace all occurrences of ai file path (./ai) with './index2134987560_modified' inside this script
+```python
+import subprocess   // pip install gitpython to get repository object and make use it here in python – see below example, after processing done save your changes back into index file. (./ai is a placeholder) replace './index2134987560_modified' with real path of .html File inside this script
+```python
+repo = gitlab.Projects.get(token=gl.project['id'], slug=gitLabRepoName, private_token=privateToken)  // Initialize GitPython library and get the repository object from your project in order to make use of it here onwards as per requirement:   repo = 
+repo.files.replace('/index', '/ai') (this would replace all occurrences inside index file with ai script.)   ```pythex or you can find more information about GitPython library and its methods at https://python-gitlab.readthedocs.io/en/latest/. You'll need to create token by installing git python package first before running the above code
+Please note that it’s not a complete solution because we are assuming there is only one .ai file in our repository which does nothing but call other scripts (./index). The complexity of your use case and structure can determine how you want this task to work.  Also, remember security concerns for accessing files from within its own repo as per best practices set by the organization/project needs

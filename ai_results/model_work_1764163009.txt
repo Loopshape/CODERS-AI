@@ -1,0 +1,2 @@
+ERROR: Failed to generate content from model 'work'.
+Ollama API Response: {"error":"\"work\" does not support generate"}

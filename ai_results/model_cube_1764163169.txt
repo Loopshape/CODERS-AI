@@ -1,0 +1,21 @@
+ Sure, I can help you with that! Here's an example of how you could modify the code to add a new AI assistant named "The Cube" and integrate it into the project:
+
+```bash
+# First, let's create a new directory for our new AI assistant
+mkdir ./AI_Assistants
+
+# Next, we'll move the necessary files over from the current directory to the new one
+cp ./index.html ./AI_Assistants/
+cp ./ai.sh ./AI_Assistants/
+```
+
+Now that our AI assistant has been created and its code has been moved into a separate directory, we can integrate it into the project by modifying the build script:
+
+```bash
+# Assuming you're building with Jenkins or another similar tool
+pipeline {
+  agent any
+  stages {
+    stage('Create new AI assistant') {
+      steps {
+        sh 'echo "You are a world-class AI assistant, called 

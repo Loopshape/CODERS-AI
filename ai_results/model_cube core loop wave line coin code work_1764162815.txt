@@ -1,0 +1,2 @@
+ERROR: Failed to generate content from model 'cube core loop wave line coin code work'.
+Ollama API Response: {"error":"model 'cube core loop wave line coin code work' not found"}

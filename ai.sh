@@ -30,7 +30,7 @@ MEMORY_FILE="${MEMORY_FILE:-$PROJECT_ROOT/ai_memory.json}"
 SCOREBOARD_FILE="${SCOREBOARD_FILE:-$PROJECT_ROOT/ai_scoreboard.json}"
 AUTO_APPROVE="${AUTO_APPROVE:-true}"
 
-MODELS=("cube" "core" "loop" "wave" "line" "coin" "code" "work")
+MODELS=("cube" "core" "loop" "wave" "line" "coin" "code")
 
 mkdir -p "$TMP_DIR" "$RESULTS_DIR" "$TOOLS_DIR" "$BACKUP_DIR"
 
@@ -54,6 +54,117 @@ check_deps(){
   if ! curl -s "http://$OLLAMA_HOST/api/tags" >/dev/null; then
     fatal "Ollama not reachable at $OLLAMA_HOST"
   fi
+}
+
+# ----------------------------------------------------------
+# ORCHESTRATION COMMANDS - USE WITH CAUTION
+# ----------------------------------------------------------
+# These functions provide powerful capabilities to interact with the filesystem and network.
+# They execute with the permissions of the user running the script.
+# Ensure you understand the impact of any command before execution.
+
+# File/Data CRUD operations
+crud_create(){
+  local file_path="$1"
+  local content="${2:-}"
+  log "CRUD CREATE: $file_path"
+  if [[ -e "$file_path" ]]; then
+      err "File already exists."
+      return 1
+  fi
+  if ! echo -e "$content" > "$file_path"; then
+    err "Failed to create file."
+    return 1
+  fi
+  chmod 777 "$file_path"
+  log "${GREEN}File created successfully with full permissions.${NC}"
+}
+
+crud_read(){
+  local file_path="$1"
+  log "CRUD READ: $file_path"
+  if [[ ! -f "$file_path" ]]; then
+      err "File not found."
+      return 1
+  fi
+  cat "$file_path" || { err "Failed to read file."; return 1; }
+}
+
+crud_update(){
+  local file_path="$1"
+  local content="$2"
+  log "CRUD UPDATE: $file_path"
+  if [[ ! -f "$file_path" ]]; then
+      err "File not found."
+      return 1
+  fi
+  if ! echo -e "$content" >> "$file_path"; then
+    err "Failed to update file (append)."
+    return 1
+  fi
+  log "${GREEN}File updated successfully (content appended).${NC}"
+}
+
+crud_delete(){
+  local file_path="$1"
+  log "CRUD DELETE: $file_path"
+  if [[ ! -f "$file_path" ]]; then
+      err "File not found."
+      return 1
+  fi
+  rm -f "$file_path" || { err "Failed to delete file."; return 1; }
+  log "${GREEN}File deleted successfully.${NC}"
+}
+
+# Batch operations
+batch_op(){
+    local operation="$1"
+    local pattern="$2"
+    log "BATCH operation '$operation' on files matching '$pattern'"
+    case "$operation" in
+        delete)
+            find . -type f -name "$pattern" -print0 | while IFS= read -r -d '' file; do
+                log "Deleting $file"
+                rm -f "$file" || err "Failed to delete $file"
+            done
+            ;;
+        chmod)
+            local perms="$3"
+            [[ -z "$perms" ]] && err "Chmod operation requires permissions (e.g., 777)." && return 1
+            find . -type f -name "$pattern" -print0 | while IFS= read -r -d '' file; do
+                log "Setting permissions of $file to $perms"
+                chmod "$perms" "$file" || err "Failed to chmod $file"
+            done
+            ;;
+        *)
+            err "Unsupported batch operation: $operation. Use delete|chmod."
+            return 1
+            ;;
+    esac
+    log "${GREEN}Batch operation finished.${NC}"
+}
+
+
+# Network operations
+rest_op(){
+  local method="$1"
+  local url="$2"
+  local data="${3:-}"
+  log "REST: $method $url"
+  local curl_opts=(-s -L --insecure) # --insecure for local self-signed certs
+  [[ -n "$data" ]] && curl_opts+=(-d "$data")
+  curl "${curl_opts[@]}" -X "$method" "$url" || { err "REST request failed."; return 1; }
+}
+
+soap_op(){
+  local url="$1"
+  local action="$2"
+  local payload="$3"
+  log "SOAP: $action @ $url"
+  curl -s -L --insecure -X POST "$url" \
+    -H "Content-Type: text/xml;charset=UTF-8" \
+    -H "SOAPAction: \"$action\"" \
+    -d "$payload" || { err "SOAP request failed."; return 1; }
 }
 
 # ----------------------------------------------------------
@@ -86,7 +197,7 @@ ensure_scoreboard_models(){
 autotune_model_order(){
   # Placeholder for adaptive model-order logic
   # In the future, this will use the scoreboard to determine the optimal order
-  echo "${MODELS[@]}"
+  printf "%s\n" "${MODELS[@]}"
 }
 
 # ----------------------------------------------------------
@@ -94,13 +205,60 @@ autotune_model_order(){
 # ----------------------------------------------------------
 run_model_and_wait(){
   local model_name="$1"
-  local prompt="$2"
+  local prompt_text="$2"
   local outfile="$3"
-  log "Running model '$model_name' with prompt: '$prompt' -> '$outfile'"
-  # Simulate model processing
-  sleep 2
-  echo "Output from $model_name for prompt: '$prompt'" > "$outfile"
-  echo "--- End of $model_name output ---" >> "$outfile"
+  local response
+  local generated_text
+  local endpoint
+
+  log "Running model '$model_name' with prompt (truncated): '${prompt_text:0:100}...' -> '$outfile'"
+
+  # --- Attempt 1: /api/generate ---
+  endpoint="generate"
+  log "Attempting /api/generate for model '$model_name'..."
+  local generate_payload
+  generate_payload=$(jq -n \
+              --arg model "$model_name" \
+              --arg prompt "$prompt_text" \
+              '{model: $model, prompt: $prompt, "stream": false}')
+
+  response=$(curl -s -X POST "http://$OLLAMA_HOST/api/generate" \
+               -H "Content-Type: application/json" \
+               -d "$generate_payload")
+
+  # Check for "does not support generate" error
+  if echo "$response" | jq -e '(.error // "") | contains("does not support generate")' > /dev/null; then
+    log "Model '$model_name' does not support /api/generate. Falling back to /api/chat."
+
+    # --- Attempt 2: /api/chat ---
+    endpoint="chat"
+    local chat_payload
+    chat_payload=$(jq -n \
+                    --arg model "$model_name" \
+                    --arg content "$prompt_text" \
+                    '{model: $model, messages: [{"role": "user", "content": $content}], "stream": false}')
+
+    response=$(curl -s -X POST "http://$OLLAMA_HOST/api/chat" \
+                 -H "Content-Type: application/json" \
+                 -d "$chat_payload")
+  fi
+
+  # --- Process the response ---
+  if [[ "$endpoint" == "generate" ]]; then
+    generated_text=$(echo "$response" | jq -r '.response')
+  else # chat
+    generated_text=$(echo "$response" | jq -r '.message.content')
+  fi
+
+  if [[ -z "$generated_text" || "$generated_text" == "null" ]]; then
+    err "Failed to get response from Ollama model '$model_name' via /api/$endpoint. Response: $response"
+    echo "ERROR: Failed to generate content from model '$model_name' via /api/$endpoint." > "$outfile"
+    echo "Ollama API Response: $response" >> "$outfile"
+    return 1
+  else
+    printf '%s' "$generated_text" > "$outfile"
+    log "${GREEN}Model '$model_name' ($endpoint) output saved to '$outfile'.${NC}"
+  fi
 }
 
 score_model_output(){
@@ -139,10 +297,10 @@ update_scoreboard_with_metrics(){
   local new_runs=$(( current_runs + runs ))
   local new_applied=$(( current_applied + applied ))
   local new_total_bytes=$(( current_total_bytes + total_bytes ))
-  
+
   # Simple average for latency for now
   local new_avg_latency=$(( (current_avg_latency * current_runs + avg_latency * runs) / new_runs ))
-  
+
   # For score, maybe a weighted average or just replace with latest? For now, simple average
   local new_score=$(( (current_score * current_runs + score * runs) / new_runs ))
 
@@ -173,59 +331,81 @@ fetch_input(){
 }
 
 # ----------------------------------------------------------
-# MAIN
+# MAIN ORCHESTRATION
 # ----------------------------------------------------------
+run_prompt_on_models() {
+    local prompt_text="$1"
+    log "Processing prompt against all models concurrently..."
+    local order=($(autotune_model_order))
+    local pids=()
+    local outfiles=()
+    for m in "${order[@]}"; do
+        local outfile="$RESULTS_DIR/model_${m}_$(date +%s).txt"
+        outfiles+=("$outfile")
+        local t0=$(date +%s%N)
+        (
+            run_model_and_wait "$m" "$prompt_text" "$outfile"
+            local t1=$(date +%s%N)
+            local latency=$(( (t1 - t0)/1000000 ))
+            local metrics; metrics=$(score_model_output "$m" "$outfile" "$latency")
+            update_scoreboard_with_metrics "$m" "$metrics"
+            log "Model '$m' finished. Latency: ${latency}ms. Scoreboard updated."
+        ) &
+        pids+=($!)
+    done
+    log "Waiting for all models to complete... PIDs: ${pids[*]}"
+    wait
+    log "${GREEN}All models have completed processing.${NC}"
+    local best_model
+    best_model=$(load_scoreboard; echo "$SCORE_JSON" | jq -r 'to_entries | sort_by(.value.score) | reverse | .[0].key')
+    log "Best performing model in this run: ${GREEN}${best_model}${NC}"
+    log "All outputs are saved in '$RESULTS_DIR'"
+    log "Done."
+}
+
 main(){
   check_deps
   init_state
   ensure_scoreboard_models
 
-  local prompt="${1:-}"
-  if [[ -z "$prompt" ]]; then
-    fatal "Usage: $0 \"<your prompt>\""
+  if [[ $# -eq 0 ]]; then
+    fatal "Usage: $0 \"<prompt|command>\" [args...]
+Commands:
+  crud <create|read|update|delete> [args...]
+  batch <delete|chmod> <pattern> [perms]
+  rest <GET|POST|PUT|DELETE> <url> [data]
+  soap <url> <action> <payload>
+  prompt <text...>
+"
   fi
 
-  log "Processing prompt against all models concurrently..."
+  local command="$1"
+  shift
 
-  # Get model execution order
-  local order=($(autotune_model_order))
-  
-  local pids=()
-  local outfiles=()
-
-  # Start all models in the background
-  for m in "${order[@]}"; do
-    local outfile="$RESULTS_DIR/model_${m}_$(date +%s).txt"
-    outfiles+=("$outfile")
-    
-    local t0=$(date +%s%N)
-    
-    # Run the model process in the background
-    (
-      run_model_and_wait "$m" "$prompt" "$outfile"
-      local t1=$(date +%s%N)
-      local latency=$(( (t1 - t0)/1000000 ))
-      
-      # Score the output and update the scoreboard
-      local metrics; metrics=$(score_model_output "$m" "$outfile" "$latency")
-      update_scoreboard_with_metrics "$m" "$metrics"
-      log "Model '$m' finished. Latency: ${latency}ms. Scoreboard updated."
-    ) &
-    pids+=($!)
-  done
-
-  # Wait for all background jobs to complete
-  log "Waiting for all models to complete... PIDs: ${pids[*]}"
-  wait
-  
-  log "${GREEN}All models have completed processing.${NC}"
-  
-  local best_model
-  best_model=$(load_scoreboard; echo "$SCORE_JSON" | jq -r 'to_entries | sort_by(.value.score) | reverse | .[0].key')
-  
-  log "Best performing model in this run: ${GREEN}${best_model}${NC}"
-  log "All outputs are saved in '$RESULTS_DIR'"
-  log "Done."
+  case "$command" in
+    crud)
+      local sub_cmd="${1:-}"
+      shift ||:
+      case "$sub_cmd" in
+        create) crud_create "$@";;
+        read) crud_read "$@";;
+        update) crud_update "$@";;
+        delete) crud_delete "$@";;
+        *) fatal "Invalid crud command: '$sub_cmd'. Use create|read|update|delete.";;
+      esac
+      ;;
+    batch)
+      batch_op "$@";;
+    rest)
+      rest_op "$@";;
+    soap)
+      soap_op "$@";;
+    prompt)
+      run_prompt_on_models "$*";;
+    *)
+      # Default to original behavior: treat the whole input as a prompt
+      run_prompt_on_models "$command $*";;
+  esac
 }
 
 main "$@"

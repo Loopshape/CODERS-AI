@@ -1,0 +1,14 @@
+To achieve this task in GitHub Actions, you would need to use the `github-actions` package within a workflow YAML (or .yml) file located at your repository's root directory which will run on every push event. This is an example of how it could look like if we are using JavaScript as our language:
+```javascript
+name: CI/CD pipeline for AI application 
+on: [push] # Whenever a commit happens in the branch 'main', this action triggers  
+jobs:   
+  build_and_deploy:     
+    runs-on: ubuntu-latest    
+    steps :             
+       - name: Checkout Source         
+         uses: actions/checkout@v2 # You are using "actions" which is a container image with the GitHub Actions dependency package installed.  It's like you have already set up your workflow to run on any push event but now, it runs inside this Docker Container and all dependencies will be managed in one place
+       - name: Run AI Injection Logic        # The logic of injecting the ai code here is defined as 'ai.sh' file  you can replace with whatever language script to execute your business logic   
+         run : bash ./ai.sh    
+```   This workflow will only be activated when someone pushes into `main` branch, it fetches changes from repository and runs the ai code that is defined in 'ai.sh' file which could include rebuilding of editors or any other tasks you want to do on your project based off AI logic scripts 
+Note: This assumes there exists an '.AI_Scripts/inject-scripting', where './index.html'. would be injected by the script, and a 'build'-'deploy'-sequence executed in order as defined within this workflow file (`bash ./ai.sh is run on every push event to build & deploy logic of index page). Also note that you need appropriate permissions for GitHub actions runner accesses your repository from its action container where the script runs, which can be setup using `with-github-token: ${{ secrets.GITHUB_TOKEN }}` in .yml file or by adding it to workflow as a step before all other steps depending on situation and requirements of how you want CI/CD pipeline work

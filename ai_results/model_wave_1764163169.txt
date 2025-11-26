@@ -1,0 +1,17 @@
+To achieve this, you would need to use a combination of GitHub API (for fetching the code), NodeJS(or similar language) programming along with AJAX request on front-end side in order to inject content into HTML. Here's an example using JavaScript and jQuery for simplicity but remember that it could be easily adapted by other languages or libraries:
+
+1. Fetching GitHub Repository Code Using `axios` library (This is a promise based HTTP client). It will give you the entire code of your repository in HTML format, including index file which we are looking to inject content into. 
+```javascript
+const getFileContent = async(url: string) => {   //replace with actual GitHub repo URL and path if necessary   
+      const response =  await fetch (`${repoUrl}/contents/index.html?ref=${branch}`);     //change branch to your default Branch or use refs instead of branches  -> replace 'github_username' & '.git', in url as per Github token access details
+      const htmlContent = await response.text();   
+       return htmlContent;   };           
+```       
+2) Injecting content into HTML file: You can use jQuery or other JavaScript libraries to append the injected code (`ai.sh script') at a certain location in your page ('#insertion_location'). 
+Please replace '#insertion_location' with actual target element id/class name where you want AI-logic injection placed on HTML file index.html:  ```javascript    
+      $(document).ready(() => {        //make sure to wait for document ready before injecting script   
+       axios('/pathToYourAIScript').then((res)=>{  //replace '/pathToYourAIScript' with actual path of your AI.sh file in repository  
+          $('#insertion_location').append(`<script>${res.data}</script>`);    });     })```        Replace 'github username', repo name, branch and '.git'-paths as per Github token access details (you will be required to have GitHub tokens for this).
+   * Note: In order the above script works you must include axios library in your project or install it using npm. If not done already then use following command at root directory of repo 'npm i axios' .  Also make sure that index file exists and has '.html extension'. Make this operation asynchronous with `async/await` to wait until data is fetched successfully before appending script in document ready event handler.
+   * Note: Inject the content into your HTML will replace existing AI-logic if it's already present, so make sure you add any additional logic that needs added after or inside this function call otherwise new injected code may overwrite old one(if there are multiple scripts). Also be aware of security concerns when fetching data from GitHub as the access token and credentials need to match exactly.
+  * Note: This is a very basic way how you can achieve your request, for production-level solution consider using REST APIs or GraphQL with server side code in nodejs/express (if required) which would simplify things significantly . You could also use GitHub's API if needed and it will be more flexible as per actual project requirements.
