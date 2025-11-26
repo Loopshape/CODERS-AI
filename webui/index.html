@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NEXUS Cluster Visualizer</title>
+<style>
+  body { margin:0; overflow:hidden; background:#0b0f1a; color:#ddd; font-family:monospace; }
+  #overlay { position:absolute; left:10px; top:10px; z-index:10; background:rgba(0,0,0,0.4); padding:8px; border-radius:6px;}
+  #log { max-height:220px; overflow:auto; width:360px; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div><b>NEXUS — Live Agents</b></div>
+  <div id="log"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script>
+const AGENTS = ["cube","core","loop","wave","line","coin","code","work"];
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+camera.position.z = 6;
+
+const nodes = {};
+const group = new THREE.Group();
+scene.add(group);
+
+// create nodes in a circle
+const R = 3.0;
+AGENTS.forEach((a,i)=>{
+  const angle = (i/AGENTS.length) * Math.PI * 2;
+  const x = Math.cos(angle)*R, y = Math.sin(angle)*R;
+  const geom = new THREE.SphereGeometry(0.35, 24, 16);
+  const mat = new THREE.MeshStandardMaterial({color:0x334455});
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.set(x,y,0);
+  group.add(mesh);
+  // label via sprite
+  const canvas = document.createElement('canvas'); canvas.width=256; canvas.height=64;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle='white'; ctx.font='28px monospace'; ctx.fillText(a,10,40);
+  const tex = new THREE.CanvasTexture(canvas);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
+  sp.scale.set(1.5,0.4,1); sp.position.set(x, y-0.6, 0);
+  group.add(sp);
+  nodes[a] = {mesh, tex, last:Date.now()};
+});
+
+// light
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(5,5,5); scene.add(light);
+const ambient = new THREE.AmbientLight(0x404040); scene.add(ambient);
+
+function animate(){
+  requestAnimationFrame(animate);
+  group.rotation.z += 0.002;
+  // fade nodes back to base color
+  const now = Date.now();
+  for(const a in nodes){
+    const n = nodes[a];
+    const age = (now - n.last)/1000;
+    const t = Math.max(0, Math.min(1, 1 - age/6));
+    const base = new THREE.Color(0x334455);
+    const hot = new THREE.Color(0xff9933);
+    n.mesh.material.color.lerpColors(base, hot, t);
+  }
+  renderer.render(scene, camera);
+}
+animate();
+
+// websocket
+const ws = new WebSocket((location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws');
+const logDiv = document.getElementById('log');
+ws.onopen = ()=>{ log('WS connected'); };
+ws.onmessage = (ev)=>{
+  try{
+    const m = JSON.parse(ev.data);
+    const a = m.agent;
+    const txt = m.text;
+    nodes[a].last = Date.now();
+    // update label texture with latest text (short)
+    const ctx = nodes[a].tex.image.getContext('2d');
+    ctx.clearRect(0,0,256,64);
+    ctx.fillStyle='white'; ctx.font='20px monospace';
+    ctx.fillText(a + ': ' + (txt.slice(0,40)), 8,34);
+    nodes[a].tex.needsUpdate = true;
+    log('['+a+'] '+txt);
+  }catch(e){ console.warn(e); }
+};
+
+function log(s){
+  const p = document.createElement('div'); p.textContent = s;
+  logDiv.prepend(p);
+  while(logDiv.childElementCount>40) logDiv.removeChild(logDiv.lastChild);
+}
+</script>
+</body>
+</html>
+

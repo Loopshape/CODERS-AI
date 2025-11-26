@@ -1,3 +1,4 @@
+cat > ai.sh <<'EOF'
 #!/usr/bin/env bash
 # ai_prime.sh – orchestrator mit genesis-hash, rehash und parallelen Agenten
 
@@ -35,7 +36,6 @@ orchestrate() {
       call_model "$agent" "$msg" | while read -r line; do
         echo "[$agent] $line"
         echo "$line" >> "$LOGDIR/$agent.log"
-	./push-agent.sh "$agent" "$line" &
       done
     ) &
   done
@@ -64,3 +64,5 @@ main() {
 }
 
 main
+EOF
+
