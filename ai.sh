@@ -57,6 +57,32 @@ check_deps(){
 }
 
 # ----------------------------------------------------------
+# CHECK AND PULL OLLAMA MODELS
+# ----------------------------------------------------------
+check_ollama_models(){
+  log "Checking for required Ollama models..."
+  local model_exists
+  for m in "${MODELS[@]}"; do
+    log "  Checking model: $m"
+    # Use /api/show to check if the model exists
+    model_exists=$(curl -s "http://$OLLAMA_HOST/api/show" -d "{\"name\": \"$m\"}" | jq -r '.error')
+    
+    if [[ "$model_exists" == "null" ]]; then
+      log "    Model '$m' found."
+    else
+      log "    Model '$m' not found. Attempting to pull..."
+      if ollama pull "$m"; then
+        log "${GREEN}    Successfully pulled model '$m'.${NC}"
+      else
+        err "    Failed to pull model '$m'. Please ensure it exists and Ollama is running."
+        # Optionally, fatal here if a model is absolutely essential
+      fi
+    fi
+  done
+  log "Finished checking for required Ollama models."
+}
+
+# ----------------------------------------------------------
 # ORCHESTRATION COMMANDS - USE WITH CAUTION
 # ----------------------------------------------------------
 # These functions provide powerful capabilities to interact with the filesystem and network.
@@ -365,6 +391,7 @@ run_prompt_on_models() {
 
 main(){
   check_deps
+  check_ollama_models # Call the new function here
   init_state
   ensure_scoreboard_models
 
@@ -401,10 +428,14 @@ Commands:
     soap)
       soap_op "$@";;
     prompt)
-      run_prompt_on_models "$*";;
+      log "Running multi-agent orchestration for prompt: $*"
+      python3 "$PROJECT_ROOT/orchestrator.py" "$*" || fatal "Orchestration failed."
+      ;;
     *)
       # Default to original behavior: treat the whole input as a prompt
-      run_prompt_on_models "$command $*";;
+      log "Running multi-agent orchestration for prompt: $command $*"
+      python3 "$PROJECT_ROOT/orchestrator.py" "$command $*" || fatal "Orchestration failed."
+      ;;
   esac
 }
 

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import time
+import sys # Import sys to access command-line arguments
 from typing import Dict, Any, List
 
 import aiohttp
@@ -34,6 +35,51 @@ def rehash_fragment(origin_hash: str, agent_name: str, thought: str) -> str:
     """Creates a new hash, linking an agent's thought to its origin."""
     fragment = f"{origin_hash}:{agent_name}:{thought}"
     return hashlib.sha256(fragment.encode()).hexdigest()
+
+def calculate_entropy(shared_state: Dict) -> float:
+    """
+    Calculates a heuristic entropy score for the current shared state.
+    Lower score indicates lower entropy (more coherent/stable state).
+    """
+    entropy_score = 0.0
+
+    # Factor in prompt integrity (Coin agent)
+    prompt_integrity = shared_state.get('prompt_integrity', '')
+    if 'INTEGRITY OK' not in prompt_integrity:
+        entropy_score += 0.5 # Penalty for integrity concerns
+
+    # Factor in resource management (Line agent)
+    resource_management = shared_state.get('resource_management', '')
+    if 'complexity' in resource_management.lower() or 'scope' in resource_management.lower():
+        if 'reduce' in resource_management.lower() or 'manage' in resource_management.lower():
+            # Less penalty if management suggestions are present
+            entropy_score += 0.2
+        else:
+            entropy_score += 0.4 # Higher penalty for unaddressed complexity/scope issues
+
+    # Factor in plan existence and clarity (Loop agent)
+    plan = shared_state.get('plan', '')
+    if not plan:
+        entropy_score += 1.0 # High penalty if no plan exists
+    
+    # Factor in code chunk validations (Work agent)
+    validations = shared_state.get('validations', {})
+    invalid_chunks = sum(1 for status in validations.values() if status.startswith('INVALID'))
+    entropy_score += invalid_chunks * 0.7 # Penalty for each invalid chunk
+
+    # Factor in success criteria (Wave agent)
+    success_criteria = shared_state.get('success_criteria', '')
+    if not success_criteria:
+        entropy_score += 0.8 # Penalty if success criteria are not yet defined
+
+    # Factor in current action stability (Cube agent) - heuristic
+    current_action = shared_state.get('current_action', '')
+    if current_action == "REFINE":
+        entropy_score += 0.1 # Slight penalty for refinement, indicates not fully stable
+    elif current_action == "PLAN" and len(shared_state.get('code_chunks', {})) > 0:
+        entropy_score += 0.3 # Higher penalty if still planning after some execution
+
+    return round(entropy_score, 2)
 
 # --- Agent Definition --------------------------------------------------------
 
@@ -98,9 +144,12 @@ class Agent:
 
 class Cube(Agent): # Orchestrator
     def _create_meta_prompt(self, base_prompt: str, state: Dict) -> str:
+        current_entropy = state.get('current_entropy_score', 0.0)
         return f"""You are 'cube', the orchestrator. The goal is: '{base_prompt}'.
 Current state: {json.dumps(state, indent=2)}.
-Based on the current state, determine the next high-level action. 
+Current Entropy Score: {current_entropy:.2f}
+Based on the current state and entropy, determine the next high-level action. 
+If the entropy is high (e.g., above 1.0), consider a 'REFINE' or 'PLAN' action to reduce uncertainty or address issues.
 Possible actions: [PLAN, EXECUTE, VALIDATE, COMPOSE, REFINE, COMPLETE].
 Respond with only the action word."""
     def _process_output(self, output: str, state: Dict):
@@ -176,12 +225,35 @@ Add necessary imports, headers, and main execution blocks. Ensure correct indent
             final_script = output.split("```python")[1].split("```")[0].strip()
             state['final_script'] = final_script
 
+class Line(Agent): # Resource Manager
+    def _create_meta_prompt(self, base_prompt: str, state: Dict) -> str:
+        return f"""You are 'line', the resource manager. Your task is to analyze the current state of the project, including the initial prompt and any progress made, to identify potential complexity, scope creep, or resource inefficiencies.
+
+Current Goal: {base_prompt}
+Current State: {json.dumps(state, indent=2)}
+
+Based on this, provide a concise assessment of complexity and scope. Suggest any adjustments needed to keep the project manageable and efficient. Focus on resource optimization and complexity reduction.
+Respond with a summary of complexity and scope, followed by suggestions if any.
+"""
+    def _process_output(self, output: str, state: Dict):
+        state['resource_management'] = output
+
+class Coin(Agent): # Request Securer
+    def _create_meta_prompt(self, base_prompt: str, state: Dict) -> str:
+        return f"""You are 'coin', the request securer. Your task is to validate the integrity and safety of the initial prompt and the current shared state. Identify any ambiguities, security vulnerabilities, ethical concerns, or potential for misuse.
+
+Initial Prompt: {base_prompt}
+Current State: {json.dumps(state, indent=2)}
+
+Based on this analysis, provide a concise integrity report. If there are concerns, list them clearly. If the prompt and state appear sound, state 'INTEGRITY OK'.
+"""
+    def _process_output(self, output: str, state: Dict):
+        state['prompt_integrity'] = output
+
 # --- Orchestration Engine ----------------------------------------------------
 
-async def main():
+async def run_orchestration(initial_prompt: str): # Renamed main to run_orchestration
     """The main orchestration loop driven by 'cube'."""
-    
-    initial_prompt = "Create a Python script using asyncio to fetch the content of three URLs in parallel and print their status codes and content length."
     
     print(f"[*] GENESIS PROMPT: {initial_prompt}\n")
     
@@ -203,14 +275,20 @@ async def main():
             "core": Core("CoreExecutor", session),
             "work": Work("WorkValidator", session),
             "code": Code("CodeComposer", session),
+            "line": Line("LineResourceManager", session), # Add Line agent
+            "coin": Coin("CoinRequestSecurer", session), # Add Coin agent
         }
-        # We don't actively use line/coin in this simulation, but they exist in the framework
         
         current_hash = genesis_hash
         max_cycles = 10
         
         for cycle in range(1, max_cycles + 1):
             print(f"\n--- ORCHESTRATION CYCLE {cycle} ---\n")
+
+            # Calculate entropy before Cube makes its decision for this cycle
+            current_entropy_score = calculate_entropy(shared_state)
+            shared_state['current_entropy_score'] = current_entropy_score
+            print(f"[*] Current Entropy Score: {current_entropy_score:.2f}")
             
             # Cube decides the current action
             cube_result = await agents["cube"].reason_and_act(initial_prompt, current_hash, shared_state)
@@ -227,7 +305,9 @@ async def main():
             if action == "PLAN":
                 tasks_to_run.extend([
                     agents["wave"].reason_and_act(initial_prompt, current_hash, shared_state),
-                    agents["loop"].reason_and_act(initial_prompt, current_hash, shared_state)
+                    agents["loop"].reason_and_act(initial_prompt, current_hash, shared_state),
+                    agents["line"].reason_and_act(initial_prompt, current_hash, shared_state), # Run Line agent during PLAN
+                    agents["coin"].reason_and_act(initial_prompt, current_hash, shared_state)  # Run Coin agent during PLAN
                 ])
             elif action == "EXECUTE":
                 tasks_to_run.append(agents["core"].reason_and_act(initial_prompt, current_hash, shared_state))
@@ -254,7 +334,11 @@ async def main():
                 print(f"     Output: {res['output'][:100].strip()}...")
                 print(f"     Fragment Hash: {res['reasoning_hash'][:16]}")
                 current_hash = res['reasoning_hash'] # The last agent's hash becomes the new origin
-
+            
+            # After agents have run, recalculate entropy for the next cycle
+            # (or use the one already calculated at the beginning if Cube doesn't need intermediate results)
+            # For now, let's keep it simple and calculate at the start of each cycle.
+            
     # --- Final Answer Responsibility ------------------------------------------
     print("\n" + "="*80)
     print("[*] Orchestration Closed. Final Answer Manifested by 'code'.")
@@ -262,13 +346,17 @@ async def main():
     
     final_code = shared_state.get("final_script", "# Composition failed. No final script was generated.")
     print(final_code)
-    
+
+
 if __name__ == "__main__":
-    # Ensure you have the ollama models running, e.g.:
-    # ollama run cube
-    # ollama run core
-    # ... etc.
-    asyncio.run(main())
+    # Get initial prompt from command-line arguments, or use a default
+    if len(sys.argv) > 1:
+        prompt_arg = sys.argv[1]
+    else:
+        prompt_arg = "Create a Python script using asyncio to fetch the content of three URLs in parallel and print their status codes and content length."
+        print("[*] No prompt provided. Using default prompt for demonstration.")
+    
+    asyncio.run(run_orchestration(prompt_arg))
 
 How to Run This System
 Install Dependencies:
