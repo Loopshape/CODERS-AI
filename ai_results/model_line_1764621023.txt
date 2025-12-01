@@ -1,0 +1,20 @@
+ To create a new virtual machine on Docker Hub using Python, you can use the following commands:
+
+```bash
+# Install docker-compose
+sudo apt-get update
+sudo apt-get install docker-compose
+
+# Create a new docker-compose file
+echo "version: '3'\nservices: \n  nginx -t myapp:80" > docker-compose.yml
+
+# Build the Dockerfile for nginx using sudo
+sudo apt-get install apk
+sudo apk add -g python3.7 -r /path/to/docker-compose.yml -f /path/to/nginx/dockerfiles/nginx.docker
+
+# Run nginx as a service in the container image
+sudo systemctl start nginx:deployer
+
+# Start the Docker Compose service to manage and scale containers
+docker-compose up --build
+```

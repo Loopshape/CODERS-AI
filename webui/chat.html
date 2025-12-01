@@ -1,0 +1,103 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-M-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nemodian 2244-1: AI Multi-Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+  <script type="importmap">
+{
+  "imports": {
+    "react-markdown": "https://aistudiocdn.com/react-markdown@^10.1.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-Qi8UNAoR.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CqfP2td-.css">
+</head>
+  <body>
+    <div id="root" hidden></div>
+
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-gray-100 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700">
+      <div id="chat-messages" class="h-64 overflow-y-auto mb-4 p-2 bg-white dark:bg-gray-900 rounded shadow-inner">
+        <!-- Chat messages will appear here -->
+        <p class="text-gray-600 dark:text-gray-400">Welcome to the Ollama Chat! Choose a model and start typing.</p>
+      </div>
+      <div class="flex items-center space-x-2">
+        <select id="model-select" class="p-2 border border-gray-300 rounded dark:bg-gray-700 dark:text-white">
+          <option value="llama3">llama3</option>
+          <option value="mistral">mistral</option>
+          <option value="gemma:latest">gemma:latest</option>
+          <!-- Add more models as needed based on your Ollama setup -->
+        </select>
+        <input type="text" id="chat-input" class="flex-grow p-2 border border-gray-300 rounded dark:bg-gray-700 dark:text-white" placeholder="Type your message..." />
+        <button id="send-button" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Send</button>
+      </div>
+    </div>
+
+    <script>
+      const chatInput = document.getElementById('chat-input');
+      const sendButton = document.getElementById('send-button');
+      const chatMessages = document.getElementById('chat-messages');
+      const modelSelect = document.getElementById('model-select');
+
+      async function sendMessage() {
+        const message = chatInput.value.trim();
+        const selectedModel = modelSelect.value;
+        if (message === '') return;
+
+        appendMessage('User', message);
+        chatInput.value = '';
+
+        try {
+          const response = await fetch('/api/prompt', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prompt: message, model: selectedModel }),
+          });
+
+          const data = await response.json();
+
+          if (data.error) {
+            appendMessage('AI (Error)', data.error, 'text-red-500');
+          } else if (data.response) {
+            appendMessage('AI', data.response);
+          } else {
+            appendMessage('AI (Error)', 'Unexpected response format: ' + JSON.stringify(data), 'text-red-500');
+          }
+        } catch (error) {
+          console.error('Error sending message:', error);
+          appendMessage('AI (Error)', 'Failed to connect to AI service.', 'text-red-500');
+        } finally {
+          chatMessages.scrollTop = chatMessages.scrollHeight; // Scroll to bottom
+        }
+      }
+
+      function appendMessage(sender, text, className = '') {
+        const messageElement = document.createElement('p');
+        messageElement.className = \`mb-1 \${className}\`;
+        messageElement.innerHTML = \`<strong>\${sender}:</strong> \${text}\`;
+        chatMessages.appendChild(messageElement);
+      }
+
+      sendButton.addEventListener('click', sendMessage);
+      chatInput.addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+          sendMessage();
+        }
+      });
+
+      // Initial scroll to bottom
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    </script>
+</body>
+</html>
+

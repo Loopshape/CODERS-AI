@@ -1,0 +1,16 @@
+{
+  "name": "webui-server",
+  "version": "1.0.0",
+  "description": "Simple Node.js server for webui",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "node-fetch": "^3.0.0"
+  }
+}

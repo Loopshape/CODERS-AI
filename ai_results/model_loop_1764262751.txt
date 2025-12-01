@@ -1,0 +1,15 @@
+Please provide me with the repository! I need the content of the repository to analyze it and explain the files. 
+
+You can:
+
+* **Paste the code directly into our chat.** (This is the easiest option).
+* **Provide a link to the repository (e.g., GitHub, GitLab, Bitbucket).**
+* **Describe the repository's purpose and structure.** (If you can't share the content, tell me what the repository is for - e.g., "It's a React project for a website," or "It's a Python script for data analysis.")
+
+Once you provide the repository content, I will do my best to:
+
+1. **Identify the current location:** I'll tell you the root directory of the repository.
+2. **Analyze the files:** I'll explain the purpose of each file, its functions, and any significant code or design elements.
+3. **Provide a summary:** I’ll give you a concise overview of what the project is about and how it's structured. 
+
+I'm ready when you are!

@@ -1,0 +1,623 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NEXUS Cluster Visualizer</title>
+<style>
+  body {
+    margin:0; overflow:hidden;
+    color:#ddd; font-family:monospace;
+    background: linear-gradient(180deg, rgba(11,15,26,1) 0%, rgba(30,0,50,1) 100%);
+  }
+  #overlay { position:absolute; left:10px; top:10px; z-index:10; background:rgba(0,0,0,0.4); padding:8px; border-radius:6px;}
+  #log { max-height:220px; overflow:auto; width:360px; font-size:12px; }
+  #prompt-container {
+    position: absolute;
+    bottom: 20px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center; /* Align items vertically in the center */
+    gap: 10px; /* Space between input and button */
+    z-index: 10;
+  }
+  #prompt-input {
+    width: 60%;
+    max-width: 700px;
+    padding: 15px 20px;
+    border-radius: 25px;
+    border: 1px solid #555;
+    background-color: #222;
+    color: #ddd;
+    font-size: 16px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    outline: none;
+    resize: vertical;
+    min-height: 50px;
+  }
+  #prompt-input:focus {
+    border-color: #888;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  }
+  #send-prompt-button {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    padding: 15px 20px;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-size: 16px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    transition: background-color 0.3s ease;
+    height: 50px; /* Match min-height of textarea */
+  }
+  #send-prompt-button:hover {
+    background-color: #45a049;
+  }
+  .log-entry-agent-pulse {
+    font-weight: bold;
+    color: #ffcc00; /* A color to indicate activity */
+    transition: color 0.5s ease-out;
+  }
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div><b>NEXUS — Live Agents</b></div>
+  <div id="log"></div>
+</div>
+<div id="prompt-container">
+  <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
+  <button id="send-prompt-button">Send</button>
+</div>
+<div id="agent-detail-card" style="
+  position: absolute;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #00ffff;
+  border-radius: 8px;
+  padding: 15px;
+  color: #fff;
+  font-family: monospace;
+  font-size: 14px;
+  z-index: 100;
+  display: none; /* Hidden by default */
+  pointer-events: none; /* Allows clicks to pass through when hidden */
+  min-width: 200px;
+  max-width: 300px;
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+">
+  <h3>Agent: <span id="card-agent-name"></span></h3>
+  <p>Status: <span id="card-agent-status"></span></p>
+  <p>Last Activity: <span id="card-agent-last-activity"></span></p>
+  <p>Tokens Used: <span id="card-agent-tokens-used"></span></p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script>
+const AGENTS = ["cube","core","loop","wave","line","coin","code","work"];
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+camera.position.z = 6;
+
+// Particle System properties
+const PARTICLE_COUNT_PER_AGENT = 50;
+const PARTICLE_SIZE = 0.05;
+const PARTICLE_SPEED = 0.01;
+const PARTICLE_LIFETIME = 50; // frames
+const BURST_PARTICLE_COUNT = 10; // Number of particles to burst on message
+const TOKEN_POOL_PARTICLE_COUNT = 100; // Number of particles for the token pool
+const ENTROPY_FACTOR = 0.0005; // Controls the randomness/chaos of particle movement
+
+const TOKEN_ION_COUNT_PER_AGENT = 5; // Number of token-ions orbiting each agent
+const TOKEN_ION_ORBIT_RADIUS = 0.5; // Radius of token-ion orbit around agent
+
+// Create a particle texture (white circle)
+const particleCanvas = document.createElement('canvas');
+particleCanvas.width = 64;
+particleCanvas.height = 64;
+const pctx = particleCanvas.getContext('2d');
+pctx.beginPath();
+pctx.arc(32, 32, 30, 0, Math.PI * 2, false);
+pctx.fillStyle = 'rgba(255, 255, 255, 1)';
+pctx.fill();
+const particleTexture = new THREE.CanvasTexture(particleCanvas);
+
+const nodes = {};
+const agentMeshes = []; // Array to store agent meshes for raycasting
+const group = new THREE.Group();
+scene.add(group);
+
+// Central Token Pool
+const tokenPoolGeometry = new THREE.SphereGeometry(0.7, 32, 32);
+const tokenPoolMaterial = new THREE.MeshStandardMaterial({ color: 0x0055aa, emissive: 0x001155, emissiveIntensity: 0.5 }); // Darker emissive
+const tokenPool = new THREE.Mesh(tokenPoolGeometry, tokenPoolMaterial);
+scene.add(tokenPool);
+
+// Particle system for Token Pool
+const tpParticlesGeometry = new THREE.BufferGeometry();
+const tpParticlePositions = new Float32Array(TOKEN_POOL_PARTICLE_COUNT * 3);
+const tpParticleVelocities = new Float32Array(TOKEN_POOL_PARTICLE_COUNT * 3);
+const tpParticleStartTimes = new Float32Array(TOKEN_POOL_PARTICLE_COUNT);
+
+for (let p = 0; p < TOKEN_POOL_PARTICLE_COUNT; p++) {
+  // Initial position around the token pool
+  tpParticlePositions[p * 3 + 0] = (Math.random() - 0.5) * tokenPoolGeometry.parameters.radius * 2;
+  tpParticlePositions[p * 3 + 1] = (Math.random() - 0.5) * tokenPoolGeometry.parameters.radius * 2;
+  tpParticlePositions[p * 3 + 2] = (Math.random() - 0.5) * tokenPoolGeometry.parameters.radius * 2;
+
+  tpParticleVelocities[p * 3 + 0] = 0; // Initially stationary
+  tpParticleVelocities[p * 3 + 1] = 0;
+  tpParticleVelocities[p * 3 + 2] = 0;
+  
+  tpParticleStartTimes[p] = -1; // -1 indicates inactive
+}
+
+tpParticlesGeometry.setAttribute('position', new THREE.BufferAttribute(tpParticlePositions, 3));
+tpParticlesGeometry.setAttribute('startTime', new THREE.BufferAttribute(tpParticleStartTimes, 1));
+
+const tpParticlesMaterial = new THREE.PointsMaterial({
+  size: PARTICLE_SIZE * 1.5, // Slightly larger particles for token pool
+  map: particleTexture,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+  transparent: true,
+  vertexColors: false,
+  color: 0x8800ff, // Purple color for token pool particles
+});
+
+const tokenPoolParticles = new THREE.Points(tpParticlesGeometry, tpParticlesMaterial);
+scene.add(tokenPoolParticles);
+
+// create nodes in a circle
+const R = 3.0;
+AGENTS.forEach((a,i)=>{
+  const angle = (i/AGENTS.length) * Math.PI * 2;
+  const x = Math.cos(angle)*R, y = Math.sin(angle)*R;
+  
+  // Nucleus (main agent sphere)
+  const geom = new THREE.SphereGeometry(0.25, 24, 16); // Slightly smaller nucleus
+  const mat = new THREE.MeshStandardMaterial({color:0x556677, emissive: 0x223344, emissiveIntensity: 0.8});
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.name = a; // Give the mesh a name to identify it later
+  mesh.position.set(x,y,0);
+  group.add(mesh);
+  agentMeshes.push(mesh); // Add mesh to the array for raycasting
+
+  // Token-ions (orbiting particles)
+  const tokenIonGeometry = new THREE.SphereGeometry(0.05, 8, 8); // Small spheres for token-ions
+  const tokenIonMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00, transparent: true, opacity: 0.8}); // Green emissive color
+  const tokenIonGroup = new THREE.Group(); // Group to hold token-ions for easy rotation
+  mesh.add(tokenIonGroup); // Add token-ion group to the nucleus mesh
+
+  const orbitingTokens = [];
+  for (let t = 0; t < TOKEN_ION_COUNT_PER_AGENT; t++) {
+    const tokenIon = new THREE.Mesh(tokenIonGeometry, tokenIonMaterial);
+    const orbitAngle = (t / TOKEN_ION_COUNT_PER_AGENT) * Math.PI * 2;
+    tokenIon.position.set(
+      TOKEN_ION_ORBIT_RADIUS * Math.cos(orbitAngle),
+      TOKEN_ION_ORBIT_RADIUS * Math.sin(orbitAngle),
+      0
+    );
+    tokenIonGroup.add(tokenIon);
+    orbitingTokens.push({mesh: tokenIon, angle: orbitAngle, speed: 0.02 + Math.random() * 0.03}); // Random speed
+  }
+
+  // label via sprite
+  const canvas = document.createElement('canvas'); canvas.width=256; canvas.height=64;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle='white'; ctx.font='28px monospace'; ctx.fillText(a,10,40);
+  const tex = new THREE.CanvasTexture(canvas);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
+  sp.scale.set(1.5,0.4,1); sp.position.set(x, y-0.6, 0);
+  group.add(sp);
+
+  // Activity level via sprite
+  const levelCanvas = document.createElement('canvas'); levelCanvas.width=256; levelCanvas.height=64;
+  const levelCtx = levelCanvas.getContext('2d'); levelCtx.fillStyle='white'; levelCtx.font='20px monospace'; levelCtx.fillText('Level: 0',10,40);
+  const levelTex = new THREE.CanvasTexture(levelCanvas);
+  const levelSp = new THREE.Sprite(new THREE.SpriteMaterial({map:levelTex}));
+  levelSp.scale.set(1.5,0.4,1); levelSp.position.set(x, y-1.2, 0); // Position below agent label, adjusted for atom design
+  group.add(levelSp);
+
+  // Connection line to token pool
+  const points = [];
+  points.push(mesh.position);
+  points.push(tokenPool.position);
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 });
+  const line = new THREE.Line(geometry, material);
+  group.add(line);
+  
+  // Particle system for agent (bursts)
+  const agentBurstParticlesGeometry = new THREE.BufferGeometry();
+  const agentBurstParticlePositions = new Float32Array(PARTICLE_COUNT_PER_AGENT * 3);
+  const agentBurstParticleVelocities = new Float32Array(PARTICLE_COUNT_PER_AGENT * 3);
+  const agentBurstParticleStartTimes = new Float32Array(PARTICLE_COUNT_PER_AGENT);
+
+  for (let p = 0; p < PARTICLE_COUNT_PER_AGENT; p++) {
+    agentBurstParticlePositions[p * 3 + 0] = x;
+    agentBurstParticlePositions[p * 3 + 1] = y;
+    agentBurstParticlePositions[p * 3 + 2] = 0;
+
+    agentBurstParticleVelocities[p * 3 + 0] = 0;
+    agentBurstParticleVelocities[p * 3 + 1] = 0;
+    agentBurstParticleVelocities[p * 3 + 2] = 0;
+    
+    agentBurstParticleStartTimes[p] = -1; // Inactive
+  }
+
+  agentBurstParticlesGeometry.setAttribute('position', new THREE.BufferAttribute(agentBurstParticlePositions, 3));
+  agentBurstParticlesGeometry.setAttribute('startTime', new THREE.BufferAttribute(agentBurstParticleStartTimes, 1));
+
+  const agentBurstParticlesMaterial = new THREE.PointsMaterial({
+    size: PARTICLE_SIZE,
+    map: particleTexture,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    vertexColors: false,
+    color: 0xffa500, // Orange-ish color for agent bursts
+  });
+
+  const agentBurstParticles = new THREE.Points(agentBurstParticlesGeometry, agentBurstParticlesMaterial);
+  group.add(agentBurstParticles);
+  
+  nodes[a] = {
+    mesh, tex, last:Date.now(), line, levelTex, levelSp,
+    status: 'Idle',
+    tokensUsed: 0,
+    lastActivity: new Date().toLocaleTimeString(),
+    orbitingTokens, tokenIonGroup, // Store orbiting tokens and their group
+    agentBurstParticles, agentBurstParticlePositions, agentBurstParticleVelocities, agentBurstParticleStartTimes, agentBurstParticlesGeometry, // New particle system
+  };
+});
+
+// light
+const hemisphereLight = new THREE.HemisphereLight(0x8888ff, 0x000000, 0.4); // Sky color, ground color, intensity reduced
+scene.add(hemisphereLight);
+const pointLight = new THREE.PointLight(0xffffff, 0.2, 100); // Color, intensity reduced, distance
+pointLight.position.set(10, 10, 10);
+scene.add(pointLight);
+
+// Axes Helper
+const axesHelper = new THREE.AxesHelper(5); // Size of the axes
+scene.add(axesHelper);
+
+function animate(){
+  requestAnimationFrame(animate);
+  group.rotation.z += 0.002;
+  // fade nodes back to base color
+      const now = Date.now();
+      for(const a in nodes){
+        const n = nodes[a];
+        const age = (now - n.last)/1000;
+        const t = Math.max(0, Math.min(1, 1 - age/3)); // More intense and faster fade
+        const base = new THREE.Color(0x334455);
+        const hot = new THREE.Color(0xff9933);
+        n.mesh.material.color.lerpColors(base, hot, t);
+    // Fade connection lines
+    if (n.line) {
+      const lineAge = (now - n.last) / 1000;
+      const lineT = Math.max(0, Math.min(1, 1 - lineAge / 2)); // Fade out faster
+      n.line.material.opacity = 0.3 + 0.7 * lineT; // Fade from 1.0 to 0.3
+      n.line.material.color.lerpColors(new THREE.Color(0x00ffff), new THREE.Color(0xff00ff), lineT); // Fade from hot color to base
+    }
+
+    // Update activity level
+    const activityLevel = Math.max(0, Math.round(10 - age)); // Map age to 0-10, 0s -> 10, 10s+ -> 0
+    const levelCtx = n.levelTex.image.getContext('2d');
+    levelCtx.clearRect(0,0,256,64);
+    levelCtx.fillStyle='white'; levelCtx.font='20px monospace';
+    levelCtx.fillText(`Level: ${activityLevel}`, 8, 34);
+    n.levelTex.needsUpdate = true;
+
+    // Update orbiting token-ions
+    n.orbitingTokens.forEach(token => {
+      token.angle += token.speed; // Update angle
+      token.mesh.position.x = TOKEN_ION_ORBIT_RADIUS * Math.cos(token.angle);
+      token.mesh.position.y = TOKEN_ION_ORBIT_RADIUS * Math.sin(token.angle);
+      // Optional: slight Z movement for 3D effect
+      token.mesh.position.z = Math.sin(token.angle * 0.5) * TOKEN_ION_ORBIT_RADIUS * 0.2;
+    });
+
+    // Update agent burst particles
+    const agentBurstParticlePositions = n.agentBurstParticlesGeometry.attributes.position.array;
+    const agentBurstParticleStartTimes = n.agentBurstParticlesGeometry.attributes.startTime.array;
+    const agentBurstParticleVelocities = n.agentBurstParticleVelocities;
+
+    for (let p = 0; p < PARTICLE_COUNT_PER_AGENT; p++) {
+      const startTime = agentBurstParticleStartTimes[p];
+
+      if (startTime < 0) continue; // Inactive particle
+
+      const elapsed = (now - startTime) / 1000; // in seconds
+
+      if (elapsed > PARTICLE_LIFETIME / 60) { // particle lifetime in seconds
+        agentBurstParticleStartTimes[p] = -1; // Mark as inactive
+        continue;
+      }
+
+      // Add random perturbation to velocity (entropy simulation)
+      agentBurstParticleVelocities[p * 3 + 0] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+      agentBurstParticleVelocities[p * 3 + 1] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+      agentBurstParticleVelocities[p * 3 + 2] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+
+      // Update position
+      agentBurstParticlePositions[p * 3 + 0] += agentBurstParticleVelocities[p * 3 + 0];
+      agentBurstParticlePositions[p * 3 + 1] += agentBurstParticleVelocities[p * 3 + 1];
+      agentBurstParticlePositions[p * 3 + 2] += agentBurstParticleVelocities[p * 3 + 2];
+
+      // Fade out
+      n.agentBurstParticles.material.opacity = 1 - (elapsed / (PARTICLE_LIFETIME / 60));
+    }
+    n.agentBurstParticlesGeometry.attributes.position.needsUpdate = true;
+    n.agentBurstParticlesGeometry.attributes.startTime.needsUpdate = true;
+  }
+
+      // Fade token pool emissive intensity
+      if (tokenPool.lastTokenReceived) {
+        const poolAge = (now - tokenPool.lastTokenReceived) / 1000;
+        const poolT = Math.max(0, Math.min(1, 1 - poolAge / 1.5)); // Fade out faster
+        tokenPool.material.emissiveIntensity = 0.7 + 0.8 * poolT; // Fade from 1.5 to 0.7 (base)
+      }
+  
+      // Update token pool particles
+      const tpParticlePositions = tpParticlesGeometry.attributes.position.array;
+      const tpParticleStartTimes = tpParticlesGeometry.attributes.startTime.array;
+  
+      for (let p = 0; p < TOKEN_POOL_PARTICLE_COUNT; p++) {
+        const startTime = tpParticleStartTimes[p];
+  
+        if (startTime < 0) continue; // Inactive particle
+  
+        const elapsed = (now - startTime) / 1000; // in seconds
+  
+        if (elapsed > PARTICLE_LIFETIME / 60 * 2) { // Token pool particles live longer
+          tpParticleStartTimes[p] = -1; // Mark as inactive
+          continue;
+        }
+
+        // Add random perturbation to velocity (entropy simulation)
+        tpParticleVelocities[p * 3 + 0] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+        tpParticleVelocities[p * 3 + 1] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+        tpParticleVelocities[p * 3 + 2] += (Math.random() - 0.5) * ENTROPY_FACTOR;
+  
+        // Update position
+        tpParticlePositions[p * 3 + 0] += tpParticleVelocities[p * 3 + 0];
+        tpParticlePositions[p * 3 + 1] += tpParticleVelocities[p * 3 + 1];
+        tpParticlePositions[p * 3 + 2] += tpParticleVelocities[p * 3 + 2];
+  
+        // Fade out
+        tokenPoolParticles.material.opacity = 1 - (elapsed / (PARTICLE_LIFETIME / 60 * 2));
+      }
+      tpParticlesGeometry.attributes.position.needsUpdate = true;
+      tpParticlesGeometry.attributes.startTime.needsUpdate = true;
+    }
+  } // This closes the 'for(const a in nodes)' loop that contains tokenPool.lastTokenReceived logic
+  renderer.render(scene, camera);
+}
+animate();
+
+// Raycasting for agent clicks
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function onMouseDown(event) {
+  // Calculate mouse position in normalized device coordinates (-1 to +1)
+  mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  // Check for intersections
+  const intersects = raycaster.intersectObjects(agentMeshes);
+
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object;
+    console.log('Clicked agent:', clickedMesh.name);
+    // Show agent detail card
+    showAgentDetailCard(clickedMesh.name, event.clientX, event.clientY);
+  } else {
+    hideAgentDetailCard();
+  }
+}
+
+window.addEventListener('mousedown', onMouseDown, false);
+
+// Agent Detail Card elements
+const agentDetailCard = document.getElementById('agent-detail-card');
+const cardAgentName = document.getElementById('card-agent-name');
+const cardAgentStatus = document.getElementById('card-agent-status');
+const cardAgentLastActivity = document.getElementById('card-agent-last-activity');
+const cardAgentTokensUsed = document.getElementById('card-agent-tokens-used');
+
+function showAgentDetailCard(agentName, mouseX, mouseY) {
+  const agentData = nodes[agentName];
+  if (!agentData) return;
+
+  cardAgentName.textContent = agentName;
+  cardAgentStatus.textContent = agentData.status;
+  cardAgentLastActivity.textContent = agentData.lastActivity;
+  cardAgentTokensUsed.textContent = agentData.tokensUsed;
+
+  // Position the card
+  agentDetailCard.style.left = `${mouseX + 15}px`; // Offset to the right of mouse
+  agentDetailCard.style.top = `${mouseY + 15}px`;  // Offset below mouse
+  agentDetailCard.style.display = 'block';
+  agentDetailCard.style.pointerEvents = 'auto'; // Enable interaction with the card
+}
+
+function hideAgentDetailCard() {
+  agentDetailCard.style.display = 'none';
+  agentDetailCard.style.pointerEvents = 'none'; // Disable interaction when hidden
+}
+
+// Prompt input and send functionality
+const promptInput = document.getElementById('prompt-input');
+const sendPromptButton = document.getElementById('send-prompt-button');
+
+sendPromptButton.addEventListener('click', sendPrompt);
+promptInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault(); // Prevent new line in textarea
+    sendPrompt();
+  }
+});
+
+async function sendPrompt() {
+  const prompt = promptInput.value.trim();
+  if (prompt === '') {
+    return; // Do nothing if prompt is empty
+  }
+
+  sendPromptButton.disabled = true; // Disable button during request
+  promptInput.disabled = true; // Disable input during request
+  promptInput.value = 'Sending...'; // Provide feedback
+
+  try {
+    const response = await fetch('/api/prompt', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prompt: prompt }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('Ollama API response:', data);
+    // You might want to display this response in the logDiv or similar
+    // For now, we'll just log it to console.
+
+  } catch (error) {
+    console.error('Error sending prompt:', error);
+    // Display error to user if needed
+  } finally {
+    promptInput.value = ''; // Clear input field
+    sendPromptButton.disabled = false; // Re-enable button
+    promptInput.disabled = false; // Re-enable input
+  }
+}
+
+
+// websocket
+const ws = new WebSocket((location.protocol==='https:'?'wss://':'ws://') + location.host + '/ws');
+const logDiv = document.getElementById('log');
+ws.onopen = ()=>{ log('WS connected'); };
+ws.onmessage = (ev)=>{
+  try{
+    const m = JSON.parse(ev.data);
+    const a = m.agent;
+    const txt = m.text;
+    nodes[a].last = Date.now();
+    
+    // Animate connection line
+    if (nodes[a].line) {
+      nodes[a].line.material.opacity = 1.0; // Make line fully visible
+      nodes[a].line.material.color.set(0xff00ff); // Set to a "hot" color
+    }
+
+    // Animate token pool
+    tokenPool.lastTokenReceived = Date.now(); // Mark time of last token
+
+    // update label texture with latest text (short)
+    const ctx = nodes[a].tex.image.getContext('2d');
+    ctx.clearRect(0,0,256,64);
+    ctx.fillStyle='white'; ctx.font='20px monospace';
+    ctx.fillText(a + ': ' + (txt.slice(0,40)), 8,34);
+    nodes[a].tex.needsUpdate = true;
+    log(a, txt);
+
+    // Trigger particle burst for this agent (agentBurstParticles)
+    const n = nodes[a];
+    let burstCount = 0;
+    for (let p = 0; p < PARTICLE_COUNT_PER_AGENT; p++) {
+      if (burstCount >= BURST_PARTICLE_COUNT) break; // Burst a limited number of particles
+      if (n.agentBurstParticleStartTimes[p] < 0) { // If particle is inactive
+        n.agentBurstParticleStartTimes[p] = now; // Activate particle
+        // Reset position to agent's mesh position (nucleus)
+        n.agentBurstParticlePositions[p * 3 + 0] = n.mesh.position.x + (Math.random() - 0.5) * 0.1;
+        n.agentBurstParticlePositions[p * 3 + 1] = n.mesh.position.y + (Math.random() - 0.5) * 0.1;
+        n.agentBurstParticlePositions[p * 3 + 2] = n.mesh.position.z + (Math.random() - 0.5) * 0.1;
+        
+        // Give it a new random outward velocity
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * PARTICLE_SPEED * 2;
+        n.agentBurstParticleVelocities[p * 3 + 0] = Math.cos(angle) * speed;
+        n.agentBurstParticleVelocities[p * 3 + 1] = Math.sin(angle) * speed;
+        n.agentBurstParticleVelocities[p * 3 + 2] = (Math.random() - 0.5) * PARTICLE_SPEED;
+        burstCount++;
+      }
+    }
+    n.agentBurstParticlesGeometry.attributes.position.needsUpdate = true;
+    n.agentBurstParticlesGeometry.attributes.startTime.needsUpdate = true;
+    // End agent particle burst logic
+
+    // Trigger particle burst for token pool
+    let tpBurstCount = 0;
+    for (let p = 0; p < TOKEN_POOL_PARTICLE_COUNT; p++) {
+      if (tpBurstCount >= BURST_PARTICLE_COUNT * 2) break; // Burst more particles for token pool
+      if (tpParticleStartTimes[p] < 0) {
+        tpParticleStartTimes[p] = now;
+        // Reset position to token pool center
+        tpParticlePositions[p * 3 + 0] = tokenPool.position.x + (Math.random() - 0.5) * tokenPool.geometry.parameters.radius * 0.5;
+        tpParticlePositions[p * 3 + 1] = tokenPool.position.y + (Math.random() - 0.5) * tokenPool.geometry.parameters.radius * 0.5;
+        tpParticlePositions[p * 3 + 2] = tokenPool.position.z + (Math.random() - 0.5) * tokenPool.geometry.parameters.radius * 0.5;
+
+        // Give it a new random outward velocity
+        const angleX = Math.random() * Math.PI * 2;
+        const angleY = Math.random() * Math.PI * 2;
+        const speed = Math.random() * PARTICLE_SPEED * 2;
+        tpParticleVelocities[p * 3 + 0] = Math.cos(angleX) * speed;
+        tpParticleVelocities[p * 3 + 1] = Math.sin(angleY) * speed;
+        tpParticleVelocities[p * 3 + 2] = (Math.random() - 0.5) * PARTICLE_SPEED * 2;
+        tpBurstCount++;
+      }
+    }
+    tpParticlesGeometry.attributes.position.needsUpdate = true;
+    tpParticlesGeometry.attributes.startTime.needsUpdate = true;
+    // End token pool particle burst logic
+    
+    // Update mock AI status/tokenize data
+    nodes[a].status = 'Active';
+    nodes[a].tokensUsed += Math.floor(txt.length / 5); // Mock token usage
+    nodes[a].lastActivity = new Date().toLocaleTimeString();
+
+    // Set status back to Idle after a short delay
+    setTimeout(() => {
+      if (nodes[a].status === 'Active') { // Only change if still active
+        nodes[a].status = 'Idle';
+      }
+    }, 3000); // Back to idle after 3 seconds
+
+  }catch(e){ console.warn(e); }
+};
+
+function log(agentName, messageText){
+  const p = document.createElement('div');
+  const agentSpan = document.createElement('span');
+  agentSpan.textContent = `[${agentName}]`;
+  agentSpan.classList.add('log-entry-agent-pulse');
+  
+  // Remove pulse class after a short delay
+  setTimeout(() => {
+    agentSpan.classList.remove('log-entry-agent-pulse');
+  }, 1000); // Pulse for 1 second
+
+  const messageSpan = document.createElement('span');
+  messageSpan.textContent = ' ' + messageText; // Add space
+  
+  p.appendChild(agentSpan);
+  p.appendChild(messageSpan);
+  
+  logDiv.prepend(p);
+  while(logDiv.childElementCount>40) logDiv.removeChild(logDiv.lastChild);
+}
+</script>
+</body>
+</html>
+

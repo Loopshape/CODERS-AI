@@ -1,0 +1,18 @@
+Okay, I understand you're indicating you're working on a project named `/home/loop/CODERS-AI`. 
+
+That's a good starting point!  To help me understand what you need, could you tell me:
+
+* **What are you trying to do with this project?** (e.g., writing a chatbot, generating code, creating a game, analyzing data, etc.)
+* **What specifically are you working on?** (e.g., are you using a specific programming language? Is it focused on AI, machine learning, or something else?)
+* **Do you have any code already?**  If so, could you share a snippet?
+* **What are you struggling with?** (e.g., are you getting an error message? Are you not sure how to start?  Are you looking for help with a specific concept?)
+
+**I'm here to assist you. I can help with:**
+
+* **Brainstorming ideas**
+* **Explaining concepts**
+* **Providing code snippets** (if you share them)
+* **Suggesting resources** (like documentation or tutorials)
+* **Helping you debug your code**
+
+Just let me know where you'd like to start.

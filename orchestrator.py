@@ -144,14 +144,9 @@ class Agent:
 
 class Cube(Agent): # Orchestrator
     def _create_meta_prompt(self, base_prompt: str, state: Dict) -> str:
-        current_entropy = state.get('current_entropy_score', 0.0)
-        return f"""You are 'cube', the orchestrator. The goal is: '{base_prompt}'.
-Current state: {json.dumps(state, indent=2)}.
-Current Entropy Score: {current_entropy:.2f}
-Based on the current state and entropy, determine the next high-level action. 
-If the entropy is high (e.g., above 1.0), consider a 'REFINE' or 'PLAN' action to reduce uncertainty or address issues.
-Possible actions: [PLAN, EXECUTE, VALIDATE, COMPOSE, REFINE, COMPLETE].
-Respond with only the action word."""
+        # current_entropy = state.get('current_entropy_score', 0.0)
+        # state_json = json.dumps(state, indent=2) 
+        return "You are 'cube', the orchestrator. Debugging: simplified prompt."
     def _process_output(self, output: str, state: Dict):
         state["current_action"] = output.replace('"', '').strip()
 
@@ -357,118 +352,3 @@ if __name__ == "__main__":
         print("[*] No prompt provided. Using default prompt for demonstration.")
     
     asyncio.run(run_orchestration(prompt_arg))
-
-How to Run This System
-Install Dependencies:
-
-pip install aiohttp
-Set Up Ollama Models: Your prompt specified the model names. You need to create them. You can do this by creating a Modelfile for each agent and then running ollama create.
-
-For example, for the cube agent, create a file named CubeModelfile:
-
-FROM mistral:latest
-SYSTEM """
-You are a component in a multi-agent AI system. Your role is 'cube', the orchestrator. You analyze the system's state and decide the next single action word from a given list. You are concise and direct.
-"""
-Then create the model:
-
-ollama create cube -f CubeModelfile
-Repeat this process for all agents (core, loop, wave, line, coin, code, work), customizing the SYSTEM prompt in the Modelfile to match their role as described in the Python script. If you prefer to use existing models, simply change the AGENT_MODELS dictionary in the script.
-
-Run the Orchestrator: Make sure your Ollama application is running. Then, execute the Python script:
-
-python main_orchestrator.py
-Simulated Execution Log
-Running the script will produce a log that looks something like this, demonstrating the threaded orchestration being closed back to code:
-
-[*] GENESIS PROMPT: Create a Python script using asyncio to fetch the content of three URLs in parallel and print their status codes and content length.
-
-[*] GENESIS HASH: 1f8a8b...
-
-================================================================================
-
---- ORCHESTRATION CYCLE 1 ---
-
-[*] CUBE decision (1.21s): PLAN | Hash: a3b4c5...
-   - WavePromiser (wave) completed in 2.54s.
-     Output: 1. The script must use Python's asyncio library. 2. It must fetch 3 distinct URLs concurrently....
-     Fragment Hash: b4c5d6...
-   - LoopAdvisor (loop) completed in 2.89s.
-     Output: Plan: 1. Define list of URLs. 2. Create an async fetch function using aiohttp. 3. Create a mai...
-     Fragment Hash: c5d6e7...
-
---- ORCHESTRATION CYCLE 2 ---
-
-[*] CUBE decision (1.15s): EXECUTE | Hash: d6e7f8...
-   - CoreExecutor (core) completed in 4.11s.
-     Output: Here is the first chunk, defining the imports and the list of URLs. ```python import asyncio im...
-     Fragment Hash: e7f8g9...
-
---- ORCHESTRATION CYCLE 3 ---
-
-[*] CUBE decision (1.09s): VALIDATE | Hash: f8g9h0...
-   - WorkValidator (work) completed in 2.01s.
-     Output: VALID...
-     Fragment Hash: g9h0i1...
-
---- ORCHESTRATION CYCLE 4 ---
-
-[*] CUBE decision (1.25s): EXECUTE | Hash: h0i1j2...
-   - CoreExecutor (core) completed in 5.32s.
-     Output: Here is the async fetch function. ```python async def fetch(session, url): ... ```...
-     Fragment Hash: i1j2k3...
-
---- ORCHESTRATION CYCLE 5 ---
-
-[*] CUBE decision (1.18s): VALIDATE | Hash: j2k3l4...
-   - WorkValidator (work) completed in 2.15s.
-     Output: VALID...
-     Fragment Hash: k3l4m5...
-
-... (cycles continue for the main function and execution logic) ...
-
---- ORCHESTRATION CYCLE 8 ---
-
-[*] CUBE decision (1.33s): COMPOSE | Hash: p6q7r8...
-   - CodeComposer (code) completed in 3.45s.
-     Output: ```python import asyncio import aiohttp ... (full assembled script) ... ```...
-     Fragment Hash: q7r8s9...
-
---- ORCHESTRATION CYCLE 9 ---
-
-[*] CUBE decision (1.10s): COMPLETE | Hash: r8s9t0...
-
-[+] CUBE determined the orchestration is complete.
-
-================================================================================
-[*] Orchestration Closed. Final Answer Manifested by 'code'.
-================================================================================
-# Final composed script by the 'code' agent
-
-import asyncio
-import aiohttp
-
-async def fetch(session, url):
-    """Asynchronously fetches a single URL and returns status and content length."""
-    try:
-        async with session.get(url) as response:
-            content = await response.read()
-            print(f"URL: {url}, Status: {response.status}, Length: {len(content)}")
-            return response.status, len(content)
-    except aiohttp.ClientError as e:
-        print(f"Error fetching {url}: {e}")
-        return None, None
-
-async def main():
-    """Main function to run the URL fetching tasks concurrently."""
-    urls = [
-        "https://www.python.org",
-        "https://www.github.com",
-        "https://www.google.com",
-    ]
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch(session, url) for url in urls]
-        await asyncio.gather(*tasks)
-
-if __name__ == "__main__":
-    asyncio.run(main())

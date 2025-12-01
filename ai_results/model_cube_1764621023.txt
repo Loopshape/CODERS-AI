@@ -1,0 +1,4 @@
+ The file is a source code for a program that can run on the Raspberry Pi and communicate with a cloud service using the AWS CLI. The program has several files that perform different tasks, such as installing packages, running scripts, managing backups, etc. Some of the important files are: 
+- The README.md file contains instructions on how to use the program and its components.
+- The requirements.txt file lists the dependencies and versions of the programs and libraries needed for the program to run properly.
+- The templates folder contains the base code for the program, such as the main.sh, index.html, etc.

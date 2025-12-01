@@ -1,0 +1,20 @@
+Okay, I understand you're providing the path to a directory. It looks like you're initiating a conversation with me about a project or code development. 
+
+**That's a very common practice for developers – it's a way to tell me where to start.** 
+
+You've given me a path to a directory.  To help me understand what you want to do, I need you to tell me **what you want me to do with this directory**.
+
+Here are some possibilities, and please tell me which one (or a combination of them) you'd like me to do:
+
+* **Do you want me to explain what the directory contains?** (e.g., "Can you tell me what's in the directory?")
+* **Do you want me to analyze the contents of the directory?** (e.g., "Can you look at the code in this directory?")
+* **Do you want me to help you with a specific task related to this directory?** (e.g., "I need help with a Python script to read files from this directory.")
+* **Do you just want me to acknowledge that I've received the information?** (e.g., "It's good to know where this is.")
+* **Something else entirely?** (Please describe what you're trying to do.)
+
+**To help me respond appropriately, please tell me:**
+
+1.  **What is the *purpose* of this directory?** (What is it related to?)
+2.  **What kind of information are you looking for?** (e.g., code, files, descriptions, etc.)
+
+I'm ready when you are!

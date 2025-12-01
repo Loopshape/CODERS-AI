@@ -1,369 +1,282 @@
 #!/bin/bash
 
+# ProPrompt.sh - A Concurrent Parallel Accelerated Orchestration
+# This script simulates a multi-agent AI system based on a circular,
+# asynchronous communication model. It uses embedded Node.js for data
+# ingestion and Python for agent reasoning, all orchestrated by Bash.
 
-# ProPrompt.sh: A Concurrent Parallel Accelerated Orchestration
-# This single file contains Bash for orchestration, embedded Python3 agents,
-# and embedded ES Module Node.js agents.
+# --- Configuration ---
+AGENT_NAMES=("Cube" "Core" "Loop" "Wave" "Line" "Coin" "Code" "Work")
+NUM_AGENTS=${#AGENT_NAMES[@]}
+PI=3.14159265359
+STEP_ANGLE=$(echo "2 * $PI / $NUM_AGENTS" | bc -l)
+STEP_DELAY=0.05 # A small delay to simulate the 2Pi/8 offset
 
-set -e
+# --- ANSI Color Codes ---
+C_RED='\033[0;31m'
+C_GREEN='\033[0;32m'
+C_YELLOW='\033[0;33m'
+C_BLUE='\033[0;34m'
+C_MAGENTA='\033[0;35m'
+C_CYAN='\033[0;36m'
+C_WHITE='\033[1;37m'
+C_NC='\033[0m' # No Color
 
-# --- Preamble and Dependency Check ---
-echo "🚀 ProPrompt Orchestrator Initializing..."
-command -v node >/dev/null 2>&1 || { echo >&2 "❌ 'node' is required but not installed. Aborting."; exit 1; }
-command -v python3 >/dev/null 2>&1 || { echo >&2 "❌ 'python3' is required but not installed. Aborting."; exit 1; }
-command -v jq >/dev/null 2>&1 || { echo >&2 "❌ 'jq' is required for pretty-printing JSON output. Please install it. Aborting."; exit 1; }
-echo "✅ Dependencies (bash, node, python3, jq) found."
+# --- Dependency Check ---
+command -v node >/dev/null 2>&1 || { echo -e "${C_RED}Error: 'node' is not installed. Aborting.${C_NC}"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo -e "${C_RED}Error: 'python3' is not installed. Aborting.${C_NC}"; exit 1; }
+command -v bc >/dev/null 2>&1 || { echo -e "${C_RED}Error: 'bc' is not installed. Aborting.${C_NC}"; exit 1; }
 
-# --- Setup: Communication and Cleanup ---
-# Create a temporary directory for agents to exchange artifacts (files).
-# This acts as our shared "circled position" message board.
-COMM_DIR=$(mktemp -d)
+# --- Input Validation ---
+if [ -z "$1" ]; then
+    echo -e "${C_RED}Usage: $0 \"<prompt or url>\"${C_NC}"
+    exit 1
+fi
+INPUT_PROMPT="$1"
 
-# Ensure the communication directory is cleaned up on script exit, error, or interrupt.
-trap 'rm -rf -- "$COMM_DIR"' EXIT
-echo "📍 Agents will coordinate in a temporary workspace: $COMM_DIR"
-echo ""
+# --- 1. Genesis Phase: Setup and Hashing ---
+echo -e "${C_WHITE}--- GENESIS PHASE ---${C_NC}"
+# Create a temporary, isolated global memory space for this run
+GLOBAL_MEMORY_DIR=$(mktemp -d -t proprompt.XXXXXX)
+echo -e "${C_CYAN}Global Memory Index created at: ${GLOBAL_MEMORY_DIR}${C_NC}"
 
-# --- Agent Definitions (Embedded Code) ---
+# Calculate the Genesis Hash from the initial input
+GENESIS_HASH=$(echo -n "$INPUT_PROMPT" | sha256sum | awk '{print $1}')
+echo -e "${C_CYAN}Genesis Hash (SHA256 of input): ${GENESIS_HASH}${C_NC}"
+echo "{\"genesis_hash\": \"${GENESIS_HASH}\", \"input\": \"$INPUT_PROMPT\", \"status\": \"initiated\"}" > "${GLOBAL_MEMORY_DIR}/manifest.json"
 
-# Node.js Agent: Wave (Data Processing) & Code (Programming/Integration)
-# We use a single ES Module file for simplicity, which can handle different tasks.
-cat > "$COMM_DIR/node_agent.mjs" << 'EOF'
-import { writeFile, readFile } from 'fs/promises';
-import { argv, exit } from 'process';
+# --- 2. Embedded Agents Logic ---
 
-// A simple utility to read JSON inputs
-async function readJsonInput(path) {
-    if (!path) return {};
+# Node.js Agent: Handles URL fetching and initial data processing (Wave's primary role)
+# We use a heredoc to embed the ES Module script.
+cat > "${GLOBAL_MEMORY_DIR}/data_ingestor.mjs" <<'EOF'
+import { promises as fs } from 'fs';
+
+async function ingest(input) {
+    let content;
     try {
-        const data = await readFile(path, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        console.error(`Node Agent Error: Could not read or parse ${path}`, error);
-        return {};
-    }
-}
-
-async function runWave(output_path) {
-    const reasoning = "As Wave, my role is to process and structure raw information. I've simulated this by creating a structured dataset with a unique ID, representing a clean and ready-to-use data source for the system.";
-    const data = {
-        agent: "Wave",
-        reasoning: reasoning,
-        artifact: {
-            datasetId: `data-${Date.now()}`,
-            schema: ["feature1", "feature2", "target"],
-            rowCount: 10000,
-            status: "PROCESSED_AND_STORED"
+        // Check if input is a valid URL
+        const url = new URL(input);
+        console.log(`[Node Ingestor] Detected URL. Fetching content from: ${url}`);
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-    };
-    await writeFile(output_path, JSON.stringify(data, null, 2));
-}
-
-async function runCode(output_path, loop_input, coin_input, use_mock_loop) {
-    const loopArtifact = await readJsonInput(loop_input);
-    const coinArtifact = await readJsonInput(coin_input);
-    
-    let reasoning, integration_logic;
-
-    if (use_mock_loop === 'true') {
-        reasoning = "As Code, I detected a delay from the Loop agent. To accelerate the critical path, I used an 'alternative crosslined path'. I've generated a mock predictive model interface and integrated it with Coin's functionalities. This ensures system assembly isn't blocked by ML model training time.";
-        integration_logic = {
-            model: "MOCK_MODEL_INTERFACE_v1.0",
-            model_status: "STUBBED_DUE_TO_TIMEOUT",
-            features: coinArtifact.artifact.modules,
-            glue_code_hash: "mock-" + Math.random().toString(36).substring(2)
-        };
-    } else {
-        reasoning = "As Code, I have successfully received the predictive model from Loop and the feature modules from Coin. I have now written the necessary programming to integrate these components, creating the functional backbone of the application.";
-        integration_logic = {
-            model: loopArtifact.artifact,
-            model_status: "INTEGRATED",
-            features: coinArtifact.artifact.modules,
-            glue_code_hash: Math.random().toString(36).substring(2)
-        };
+        // For simplicity, we'll process as text. A real system would handle content types.
+        content = `Content fetched from URL ${url}:\n\n${await response.text()}`;
+    } catch (_) {
+        // If it's not a URL, treat it as a raw prompt
+        console.log('[Node Ingestor] Detected raw prompt.');
+        content = input;
     }
-
-    const data = {
-        agent: "Code",
-        reasoning: reasoning,
-        artifact: integration_logic
-    };
-    await writeFile(output_path, JSON.stringify(data, null, 2));
+    return content;
 }
 
-// Simple command-line router
-const [,, agent, ...args] = argv;
-switch (agent) {
-    case 'Wave':
-        runWave(args[0]);
-        break;
-    case 'Code':
-        runCode(args[0], args[1], args[2], args[3]);
-        break;
-    default:
-        console.error(`Unknown Node agent: ${agent}`);
-        exit(1);
+const inputFile = process.argv[2];
+const outputFile = process.argv[3];
+
+if (!inputFile || !outputFile) {
+    console.error('Usage: node data_ingestor.mjs <path_to_input_manifest> <path_to_output_file>');
+    process.exit(1);
 }
+
+(async () => {
+    try {
+        const manifest = JSON.parse(await fs.readFile(inputFile, 'utf-8'));
+        const processedContent = await ingest(manifest.input);
+        await fs.writeFile(outputFile, processedContent);
+        console.log(`[Node Ingestor] Initial data processed and written to ${outputFile}`);
+    } catch (error) {
+        console.error(`[Node Ingestor] Error: ${error.message}`);
+        await fs.writeFile(outputFile, `Error processing input: ${error.message}`);
+    }
+})();
 EOF
 
-# Python Agent: For Cube, Core, Loop, Line, Coin, Work
-# A single Python script that can perform the role of multiple agents.
-cat > "$COMM_DIR/python_agent.py" << 'EOF'
-import json
+
+# Python Agent: Simulates the reasoning for all 8 agents
+# This single Python file contains the logic for every agent role.
+cat > "${GLOBAL_MEMORY_DIR}/agent_reasoner.py" <<'EOF'
 import sys
 import time
-import random
+import hashlib
 
-def read_json_input(path):
-    try:
-        with open(path, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def write_json_output(path, data):
-    with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def run_cube(output_path):
-    reasoning = "As Cube, I construct the high-level architectural blueprint. I've chosen a 'Hybrid Microservices' model as it offers the best balance of scalability and cohesive development for this system."
-    data = {
-        "agent": "Cube",
-        "reasoning": reasoning,
-        "artifact": { "architecture_blueprint": "Hybrid Microservices v2" }
-    }
-    time.sleep(0.5) # Simulate architectural work
-    write_json_output(output_path, data)
-
-def run_core(output_path, cube_input):
-    cube_artifact = read_json_input(cube_input)
-    blueprint = cube_artifact.get("artifact", {}).get("architecture_blueprint", "default")
-    reasoning = f"As Core, I provide foundational algorithms based on the architectural plan from Cube. Given the '{blueprint}', I've selected a set of robust, scalable algorithms for data processing and model inference."
-    data = {
-        "agent": "Core",
-        "reasoning": reasoning,
-        "artifact": { "algorithms": ["Optimized Tree Boosting", "Clustering HDBSCAN", "Graph Analytics"] }
-    }
-    time.sleep(1) # Simulate algorithm design
-    write_json_output(output_path, data)
-
-def run_loop(output_path, core_input, wave_input):
-    core_artifact = read_json_input(core_input)
-    wave_artifact = read_json_input(wave_input)
-    reasoning = "As Loop, I am responsible for machine learning. Using algorithms from Core and the dataset from Wave, I have trained a predictive model. This process is computationally intensive, hence the simulated delay."
-    # Simulate a long-running ML training job
-    print("Loop: [INFO] Starting intensive model training simulation...")
-    time.sleep(4)
-    print("Loop: [INFO] Model training complete.")
-    data = {
-        "agent": "Loop",
-        "reasoning": reasoning,
-        "artifact": { "model_name": "PredictiveAnalysisModel_v1", "accuracy": 0.94 }
-    }
-    write_json_output(output_path, data)
-
-def run_line(output_path, cube_input, wave_input):
-    cube_artifact = read_json_input(cube_input)
-    wave_artifact = read_json_input(wave_input)
-    reasoning = "As Line, my purpose is perfect alignment. I have analyzed the blueprint from Cube and the data schema from Wave to create a detailed task assignment plan for the other agents, ensuring a cohesive build process."
-    data = {
-        "agent": "Line",
-        "reasoning": reasoning,
-        "artifact": { "assignment_plan_id": f"plan-{random.randint(1000, 9999)}", "tasks": ["FeatureEngineering", "API_Development", "UI_Component_Build"] }
-    }
-    time.sleep(0.7) # Simulate planning
-    write_json_output(output_path, data)
+def think(agent_name, prompt):
+    """Simulates the reasoning process for a given agent."""
     
-def run_coin(output_path, line_input):
-    line_artifact = read_json_input(line_input)
-    reasoning = "As Coin, I implement distinct functionalities. Based on the assignment plan from Line, I have defined the core feature modules of the system, such as 'User Authentication' and 'Data Visualization'."
-    data = {
-        "agent": "Coin",
-        "reasoning": reasoning,
-        "artifact": { "modules": ["User Authentication", "Data Visualization", "Reporting Dashboard"] }
-    }
-    time.sleep(1.2) # Simulate feature implementation
-    write_json_output(output_path, data)
+    # Simulate cognitive load
+    time.sleep(0.1) 
+    
+    reasoning = ""
+    if agent_name == "Cube":
+        reasoning = f"""
+### Perspective by Cube ###
+1.  **Structural View:** The request can be broken down into components: Orchestration, Parallelism, and Validation.
+2.  **Functional View:** The goal is to achieve faster, more robust results by combining specialized agent outputs.
+3.  **Implementation View:** A hybrid script (Bash, Node, Python) can model this, using file-based shared memory for communication.
+"""
+    elif agent_name == "Core":
+        reasoning = f"""
+### Foundational Algorithms by Core ###
+-   **Concurrency Model:** Fork-Join Parallelism.
+-   **Communication:** Asynchronous broadcast via a shared file system (publish-subscribe pattern).
+-   **Validation:** Cryptographic Hashing (SHA-256) for data integrity checks (Genesis and Final hashes).
+-   **Topology:** Simulated Ring Topology with stepped execution delays.
+"""
+    elif agent_name == "Loop":
+        reasoning = f"""
+### Predictive Analysis by Loop ###
+-   **Pattern Detected:** The query implies a need for emergent intelligence from collaborative simple agents.
+-   **Prediction:** The final assembled output will likely be more comprehensive than a single-agent response.
+-   **Trend:** The 'crosslined path' suggests that all agents should have access to all other agents' data, predicting a need for a final aggregation step.
+"""
+    elif agent_name == "Wave":
+        # Wave's role is primarily data ingestion, but it also processes it.
+        line_count = len(prompt.splitlines())
+        word_count = len(prompt.split())
+        reasoning = f"""
+### Data Processing by Wave ###
+-   **Input Type:** Analyzed as {'URL content' if prompt.startswith('Content fetched') else 'Raw Text'}.
+-   **Metrics:** Input contains approximately {line_count} lines and {word_count} words.
+-   **Initial Token Stream:** The data is now ready for deep processing by other agents.
+"""
+    elif agent_name == "Line":
+        reasoning = f"""
+### Alignment & Assignment by Line ###
+-   **Task Breakdown (Plan):**
+    1.  [Genesis] Create secure workspace and initial hash.
+    2.  [Wave/Ingest] Fetch and clean the input data.
+    3.  [Cube, Core, Loop, etc.] All agents analyze data in parallel from their unique perspectives.
+    4.  [Work] Assemble all parallel streams into a final, coherent response.
+    5.  [Validation] Re-hash the final output to ensure integrity.
+-   **Alignment:** All outputs must be text-based and stored in the global memory index.
+"""
+    elif agent_name == "Coin":
+        reasoning = f"""
+### Functionality Implementation by Coin ###
+-   **System Functionality:**
+    -   `parse_prompt_or_url()`: Implemented via Node.js fetch API.
+    -   `orchestrate_in_parallel()`: Implemented via Bash background processes (`&`).
+    -   `share_tokenize_stream()`: Implemented via agent-specific output files.
+    -   `rehash_and_validate()`: Implemented via `sha256sum`.
+"""
+    elif agent_name == "Code":
+        reasoning = f"""
+### Programming Logic by Code ###
+-   **Orchestrator (Bash):**
+    ```bash
+    for i in {{0..7}}; do
+        python3 agent.py $AGENTS[$i] &
+    done
+    wait
+    ```
+-   **Reasoner (Python):**
+    ```python
+    if agent == 'Cube':
+        # Generate 3 perspectives
+    elif agent == 'Core':
+        # Extract algorithms
+    ...
+    ```
+-   **Data Ingestor (Node.js):**
+    ```javascript
+    const response = await fetch(url);
+    const text = await response.text();
+    ```
+"""
+    elif agent_name == "Work":
+        # 'Work' has a special role: assembly. It gets all other agent data.
+        reasoning = f"\n### Final Assembly by Work ###\nThis is the reorchestrational chunk-assembly of all agent outputs, synchronized and validated for a final coherent answer.\n"
+        reasoning += prompt # In this case, prompt is the concatenated data
+    else:
+        reasoning = f"Agent {agent_name} reporting: No specific logic defined."
 
-def run_work(output_path, *input_paths):
-    artifacts = {}
-    for path in input_paths:
-        data = read_json_input(path)
-        agent_name = data.get("agent", "unknown")
-        artifacts[agent_name] = data
-    reasoning = "As Work, I am the final assembler. I have gathered all the artifacts produced by every agent, from the initial blueprint by Cube to the final glue code from Code. I have now orchestrated them into a single, cohesive, and logical final system manifest."
-    final_system = {
-        "agent": "Work",
-        "reasoning": reasoning,
-        "final_answer_bearing": "SYSTEM_ASSEMBLY_COMPLETE",
-        "system_manifest": artifacts
-    }
-    time.sleep(0.5) # Simulate assembly
-    write_json_output(output_path, final_system)
+    return reasoning.strip()
 
 if __name__ == "__main__":
-    agent = sys.argv[1]
-    args = sys.argv[2:]
-    if agent == "Cube": run_cube(*args)
-    elif agent == "Core": run_core(*args)
-    elif agent == "Loop": run_loop(*args)
-    elif agent == "Line": run_line(*args)
-    elif agent == "Coin": run_coin(*args)
-    elif agent == "Work": run_work(*args)
-    else:
-        print(f"Unknown Python agent: {agent}")
-        sys.exit(1)
+    agent_name = sys.argv[1]
+    input_file_path = sys.argv[2]
+    output_file_path = sys.argv[3]
+
+    with open(input_file_path, 'r', encoding='utf-8') as f:
+        prompt_data = f.read()
+
+    result = think(agent_name, prompt_data)
+
+    with open(output_file_path, 'w', encoding='utf-8') as f:
+        f.write(result)
 EOF
 
-# --- Agent Orchestration Functions (in Bash) ---
+# --- 3. Orchestration Phase: Concurrent Execution ---
+echo -e "\n${C_WHITE}--- ORCHESTRATION PHASE ---${C_NC}"
+echo -e "${C_MAGENTA}Posing agents on a circled position with a 2*Pi/8 stepped offset...${C_NC}"
 
-# Helper function to wait for dependency files to be created by other agents.
-# This is the core of the decentralized choreography.
-wait_for_dependencies() {
-    local agent_name=$1
-    shift
-    for dep in "$@"; do
-        echo "$agent_name: [WAIT] Waiting for artifact from $(basename "$dep" .json)..."
-        while [ ! -f "$dep" ]; do
-            sleep 0.1
-        done
-        echo "$agent_name: [OK] Received artifact from $(basename "$dep" .json)."
-    done
-}
+# Step 3.1: Wave's primary function - Data Ingestion
+echo -e "[${C_YELLOW}WAVE${C_NC}] Performing initial data ingestion..."
+node "${GLOBAL_MEMORY_DIR}/data_ingestor.mjs" "${GLOBAL_MEMORY_DIR}/manifest.json" "${GLOBAL_MEMORY_DIR}/initial_data.txt"
+if [ $? -ne 0 ]; then
+    echo -e "${C_RED}Data ingestion failed. Aborting.${C_NC}"
+    rm -rf "${GLOBAL_MEMORY_DIR}"
+    exit 1
+fi
+echo -e "[${C_YELLOW}WAVE${C_NC}] Ingestion complete. Data is now in global memory."
 
-# Define a function for each agent. They will be run in the background.
-
-run_Cube() {
-    local out="$COMM_DIR/Cube.json"
-    echo "Cube: [RUN] Building AI system blueprint..."
-    python3 "$COMM_DIR/python_agent.py" Cube "$out"
-    echo "Cube: [DONE] Blueprint created."
-}
-
-run_Wave() {
-    local out="$COMM_DIR/Wave.json"
-    echo "Wave: [RUN] Processing and storing data..."
-    node "$COMM_DIR/node_agent.mjs" Wave "$out"
-    echo "Wave: [DONE] Data is ready."
-}
-
-run_Core() {
-    local cube_in="$COMM_DIR/Cube.json"
-    local out="$COMM_DIR/Core.json"
-    wait_for_dependencies "Core" "$cube_in"
-    echo "Core: [RUN] Providing foundational algorithms..."
-    python3 "$COMM_DIR/python_agent.py" Core "$out" "$cube_in"
-    echo "Core: [DONE] Algorithms defined."
-}
-
-run_Line() {
-    local cube_in="$COMM_DIR/Cube.json"
-    local wave_in="$COMM_DIR/Wave.json"
-    local out="$COMM_DIR/Line.json"
-    wait_for_dependencies "Line" "$cube_in" "$wave_in"
-    echo "Line: [RUN] Aligning tasks and creating assignment plan..."
-    python3 "$COMM_DIR/python_agent.py" Line "$out" "$cube_in" "$wave_in"
-    echo "Line: [DONE] Assignment plan is ready."
-}
-
-run_Loop() {
-    local core_in="$COMM_DIR/Core.json"
-    local wave_in="$COMM_DIR/Wave.json"
-    local out="$COMM_DIR/Loop.json"
-    wait_for_dependencies "Loop" "$core_in" "$wave_in"
-    echo "Loop: [RUN] Starting machine learning and predictive analysis..."
-    python3 "$COMM_DIR/python_agent.py" Loop "$out" "$core_in" "$wave_in"
-    echo "Loop: [DONE] Predictive model trained."
-}
-
-run_Coin() {
-    local line_in="$COMM_DIR/Line.json"
-    local out="$COMM_DIR/Coin.json"
-    wait_for_dependencies "Coin" "$line_in"
-    echo "Coin: [RUN] Implementing system functionalities..."
-    python3 "$COMM_DIR/python_agent.py" Coin "$out" "$line_in"
-    echo "Coin: [DONE] Functionality modules are defined."
-}
-
-run_Code() {
-    local loop_in="$COMM_DIR/Loop.json"
-    local coin_in="$COMM_DIR/Coin.json"
-    local out="$COMM_DIR/Code.json"
-    local use_mock_loop="false"
+# Step 3.2: Launch all reasoning agents in parallel
+pids=()
+for i in $(seq 0 $(($NUM_AGENTS - 1))); do
+    AGENT_NAME=${AGENT_NAMES[$i]}
     
-    wait_for_dependencies "Code" "$coin_in"
-
-    # --- "Alternative Crosslined Path" Logic ---
-    # Code will wait for Loop, but only for a short time.
-    echo "Code: [WAIT] Waiting for Loop's ML model (max 2 seconds)..."
-    for i in {1..20}; do # 20 * 0.1s = 2s timeout
-        [ -f "$loop_in" ] && break
-        sleep 0.1
-    done
-
-    if [ ! -f "$loop_in" ]; then
-        echo "Code: [WARN] Timeout waiting for Loop. Engaging alternative crosslined path!"
-        use_mock_loop="true"
-    else
-        echo "Code: [OK] Received artifact from Loop."
+    # Skip 'Work' agent for now, it runs last.
+    if [ "$AGENT_NAME" == "Work" ]; then
+        continue
     fi
     
-    echo "Code: [RUN] Developing integration programming..."
-    node "$COMM_DIR/node_agent.mjs" Code "$out" "$loop_in" "$coin_in" "$use_mock_loop"
-    echo "Code: [DONE] Glue code is complete."
-}
+    # Calculate offset and position
+    OFFSET_DELAY=$(echo "$i * $STEP_DELAY" | bc -l)
+    POSITION_RADIANS=$(echo "$i * $STEP_ANGLE" | bc -l)
 
-run_Work() {
-    # Work depends on all key final artifacts to assemble the system.
-    local deps=("$COMM_DIR/Cube.json" "$COMM_DIR/Core.json" "$COMM_DIR/Loop.json" "$COMM_DIR/Wave.json" "$COMM_DIR/Line.json" "$COMM_DIR/Coin.json" "$COMM_DIR/Code.json")
-    local out="$COMM_DIR/Work.json"
-    wait_for_dependencies "Work" "${deps[@]}"
-    echo "Work: [RUN] Assembling all parts into the final system..."
-    python3 "$COMM_DIR/python_agent.py" Work "$out" "${deps[@]}"
-    echo "Work: [DONE] Final system assembled."
-}
-
-# --- Main Execution Block ---
-# Launch all agents concurrently as background processes.
-# The `wait_for_dependencies` function within each agent handles the orchestration.
-echo "--- Starting Concurrent Agent Orchestration ---"
-echo "Agents are now active. Their execution order will be determined by data dependencies."
-echo ""
-
-run_Cube &
-run_Wave &
-run_Core &
-run_Line &
-run_Loop &
-run_Coin &
-run_Code &
-run_Work &
-
-# Display a spinner while waiting for all background jobs to complete
-echo ""
-echo "Orchestration in progress. Waiting for all agents to complete..."
-spinner="/|\\-"
-while jobs %% > /dev/null 2>&1; do
-  for i in $(seq 0 3); do
-    echo -ne "\r[${spinner:$i:1}]"
-    sleep 0.1
-  done
+    echo -e "[${C_YELLOW}${AGENT_NAME}${C_NC}] Commencing thought process at position ${POSITION_RADIANS:.2f} rad, offset ${OFFSET_DELAY}s"
+    
+    # Each agent works on the initial data and writes to its own file
+    # The `sleep` simulates the "stepped offset"
+    ( sleep $OFFSET_DELAY && \
+      python3 "${GLOBAL_MEMORY_DIR}/agent_reasoner.py" "$AGENT_NAME" "${GLOBAL_MEMORY_DIR}/initial_data.txt" "${GLOBAL_MEMORY_DIR}/token_stream_${AGENT_NAME}.txt"
+    ) &
+    pids+=($!)
 done
-echo -e "\r[✔] All agent processes have concluded."
-echo ""
-echo "--- Orchestration Complete ---"
-echo ""
 
-# --- Final Answer ---
-echo "✅ The final-answer bearing artifact from the 'Work' agent is:"
-echo "================================================================"
-# Use jq to pretty-print the final JSON output
-if [ -f "$COMM_DIR/Work.json" ]; then
-    jq . "$COMM_DIR/Work.json"
-else
-    echo "❌ Critical error: Final artifact from 'Work' agent was not found."
-fi
-echo "================================================================"
+# Wait for all parallel agents to complete their reasoning
+echo -e "${C_MAGENTA}Waiting for all crosslined paths to commute...${C_NC}"
+for pid in "${pids[@]}"; do
+    wait $pid
+done
+echo -e "${C_GREEN}All agents have completed their individual reasoning.${C_NC}"
 
-# The 'trap' will now execute, cleaning up the $COMM_DIR.
-exit 0
+# --- 4. Assembly Phase: Reorchestration and Validation ---
+echo -e "\n${C_WHITE}--- ASSEMBLY & VALIDATION PHASE ---${C_NC}"
+echo -e "[${C_YELLOW}Work${C_NC}] Initiating reorchestrational chunk-assembly..."
+
+# Concatenate all token streams for the 'Work' agent
+ASSEMBLY_INPUT_FILE="${GLOBAL_MEMORY_DIR}/assembly_input.txt"
+for AGENT_NAME in "${AGENT_NAMES[@]}"; do
+    if [ "$AGENT_NAME" != "Work" ]; then
+        cat "${GLOBAL_MEMORY_DIR}/token_stream_${AGENT_NAME}.txt" >> "$ASSEMBLY_INPUT_FILE"
+        echo -e "\n\n" >> "$ASSEMBLY_INPUT_FILE"
+    fi
+done
+
+# 'Work' agent assembles the final result
+FINAL_ANSWER_FILE="${GLOBAL_MEMORY_DIR}/final_answer.txt"
+python3 "${GLOBAL_MEMORY_DIR}/agent_reasoner.py" "Work" "$ASSEMBLY_INPUT_FILE" "$FINAL_ANSWER_FILE"
+
+# Calculate the final hash for entropic validation
+FINAL_HASH=$(cat "$FINAL_ANSWER_FILE" | sha256sum | awk '{print $1}')
+echo -e "${C_CYAN}Final Rehash for Entropic Validation: ${FINAL_HASH}${C_NC}"
+
+# --- 5. Final Output ---
+echo -e "\n${C_GREEN}--- FINAL ORCHESTRATED RESPONSE ---${C_NC}"
+cat "$FINAL_ANSWER_FILE"
+
+# --- 6. Cleanup ---
+rm -rf "${GLOBAL_MEMORY_DIR}"
+echo -e "\n${C_BLUE}Global Memory Index destroyed. Orchestration complete.${C_NC}"

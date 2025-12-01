@@ -1,0 +1,13 @@
+Please provide me with the repository! I need the content of the repository to analyze it and explain the files. 😊 
+
+You can:
+
+1. **Paste the code directly into our chat.** (This is the easiest for me)
+2. **Provide a link to the repository (GitHub, GitLab, Bitbucket, etc.)** -  I can then access the repository's contents. 
+
+Once you give me the repository, I will do my best to:
+
+* **Identify the current location:** (e.g., "This repository is on GitHub: [URL]")
+* **Explain the files:**  I'll summarize each file's purpose, its key functionalities, and any significant changes or patterns I can identify. 
+
+Looking forward to helping you!
