@@ -50,6 +50,7 @@ check_deps(){
   local deps=(curl jq)
   for d in "${deps[@]}"; do
     command -v "$d" >/dev/null || fatal "Missing dependency: $d"
+  einzelne
   done
   if ! curl -s "http://$OLLAMA_HOST/api/tags" >/dev/null; then
     fatal "Ollama not reachable at $OLLAMA_HOST"
@@ -396,14 +397,7 @@ main(){
   ensure_scoreboard_models
 
   if [[ $# -eq 0 ]]; then
-    fatal "Usage: $0 \"<prompt|command>\" [args...]
-Commands:
-  crud <create|read|update|delete> [args...]
-  batch <delete|chmod> <pattern> [perms]
-  rest <GET|POST|PUT|DELETE> <url> [data]
-  soap <url> <action> <payload>
-  prompt <text...>
-"
+    fatal "Usage: $0 \"<prompt|command>\" [args...]\nCommands:\n  crud <create|read|update|delete> [args...]\n  batch <delete|chmod> <pattern> [perms]\n  rest <GET|POST|PUT|DELETE> <url> [data]\n  soap <url> <action> <payload>\n  prompt <text...>\n"
   fi
 
   local command="$1"
@@ -430,7 +424,7 @@ Commands:
     prompt)
       log "Running multi-agent orchestration for prompt: $*"
       python3 "$PROJECT_ROOT/orchestrator.py" "$*" || fatal "Orchestration failed."
-      ;;
+      ;;    
     *)
       # Default to original behavior: treat the whole input as a prompt
       log "Running multi-agent orchestration for prompt: $command $*"
@@ -440,4 +434,4 @@ Commands:
 }
 
 main "$@"
-
+summarize_nexus_prompt='\nNEXUS-AGENT: Convert the following input into structured entropic intelligence.\nUse the NEXUS logic layers: hash, rehash, timestamps, vectorization, node-polarization, loop-alignment, and π-prediction (2π-bypass).\n\nOutput strictly in this structure:\n\n1. ORIGIN HASH\n- compressed essence in 3–5 sentences\n- primary meaning vector\n- timestamp-encoded core\n\n2. REHASH STACK\n- list of major derived meaning branches\n- each with semantic source, logical root, entropic contribution\n\n3. NODE-VECTOR MAP (LCP/NEXUS)\n- polarized nodes\n- vectors\n- loops\n- cross-node interference & resolution\n\n4. LOOP ALIGNMENT\n- closed loops\n- async loops\n- roots back to origin\n- alignment index (0–1)\n\n5. π-PREDICTOR LAYER\n- where π-protection is needed\n- where 2π bypass resolves logical deadlocks\n\n6. CONSTRAINT BOUNDS\n- hard rules\n- logical safeties\n- entropic boundaries\n\n7. OPEN INDEX NODES\n- missing info\n- unclear parameters\n- async branches requiring future rehash rounds\n\n8. NEXT ACTIONS (NEXUS-AGENT)\n- which hashes to generate\n- which rehashes to perform\n- loop initiation/closure\n- π-bypass preparation\n\nCONTENT INPUT:\n```INPUT_BLOCK```\n'
